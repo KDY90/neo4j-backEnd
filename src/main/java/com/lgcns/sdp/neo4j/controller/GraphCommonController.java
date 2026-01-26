@@ -1,9 +1,6 @@
 package com.lgcns.sdp.neo4j.controller;
 
-import com.lgcns.sdp.neo4j.dto.GraphLabelCountDto;
-import com.lgcns.sdp.neo4j.dto.GraphSchemaDto;
-import com.lgcns.sdp.neo4j.dto.GraphSearchBarDto;
-import com.lgcns.sdp.neo4j.dto.GraphSearchRequestDto;
+import com.lgcns.sdp.neo4j.dto.*;
 import com.lgcns.sdp.neo4j.service.GraphCommonService;
 import com.lgcns.sdp.neo4j.service.GraphSearchService;
 import lombok.RequiredArgsConstructor;
@@ -46,7 +43,7 @@ public class GraphCommonController {
     }
 
     @PostMapping("/search")
-    public Collection<Map<String, Object>> searchGraph(@RequestBody GraphSearchRequestDto requestDto) {
+    public Collection<GraphSearchResponseDto> searchGraph(@RequestBody GraphSearchRequestDto requestDto) {
         // 결과는 Neo4j Path 객체들이 포함된 Map 리스트로 반환됩니다.
         // 프론트엔드에서는 이 결과(p)를 파싱하여 시각화하면 됩니다.
         return graphSearchService.searchByCyphers(requestDto.getCyphers());

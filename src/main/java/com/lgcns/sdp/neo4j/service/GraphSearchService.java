@@ -1,6 +1,7 @@
 package com.lgcns.sdp.neo4j.service;
 
 import com.lgcns.sdp.neo4j.dto.GraphSearchRequestDto.CypherBlock;
+import com.lgcns.sdp.neo4j.dto.GraphSearchResponseDto;
 import lombok.RequiredArgsConstructor;
 
 import org.neo4j.cypherdsl.core.Condition;
@@ -28,18 +29,19 @@ public class GraphSearchService {
     private final Neo4jClient neo4jClient;
 
     @Transactional(readOnly = true)
-    public List<Map<String, Object>> searchByCyphers(List<CypherBlock> cyphers) {
+    public List<GraphSearchResponseDto> searchByCyphers(List<CypherBlock> cyphers) {
         if (cyphers == null || cyphers.isEmpty()) {
             return Collections.emptyList();
         }
 
         List<Condition> whereConditions = new ArrayList<>();
 
-        // 1. 첫 번째 노드 생성
+        // ---------------------------------------------------------
+        // 1. Cypher-DSL을 이용한 동적 쿼리 빌드 (기존 로직 유지)
+        // ---------------------------------------------------------
         CypherBlock firstBlock = cyphers.get(0);
-        Node rootNode = createNode(firstBlock, 0);
+        org.neo4j.cypherdsl.core.Node rootNode = createNode(firstBlock, 0);
 
-        // 노드 조건 수집
         collectConditions(rootNode, firstBlock, whereConditions);
 
         ExposesRelationships<?> currentPath = rootNode;
@@ -50,12 +52,11 @@ public class GraphSearchService {
             CypherBlock relBlock = cyphers.get(i);
             CypherBlock nextNodeBlock = cyphers.get(i + 1);
 
-            Node nextNode = createNode(nextNodeBlock, i + 1);
+            org.neo4j.cypherdsl.core.Node nextNode = createNode(nextNodeBlock, i + 1);
 
-            // 관계 생성 (이름 부여)
-            Relationship relationship = extendPath(currentPath, nextNode, relBlock, i);
+            // 관계 생성
+            org.neo4j.cypherdsl.core.Relationship relationship = extendPath(currentPath, nextNode, relBlock, i);
 
-            // 관계 및 다음 노드 조건 수집
             collectConditions(relationship, relBlock, whereConditions);
             collectConditions(nextNode, nextNodeBlock, whereConditions);
 
@@ -64,28 +65,29 @@ public class GraphSearchService {
 
         PatternElement finalPattern = (PatternElement) currentPath;
 
-        // 조건을 하나로 병합
         Condition finalCondition = whereConditions.stream()
                 .reduce(Condition::and)
                 .orElse(Cypher.noCondition());
 
-        // 2. 최종 쿼리 빌드
+        // 2. 최종 쿼리 생성
         Statement statement = Cypher.match(Cypher.path("p").definedBy(finalPattern))
                 .where(finalCondition)
-                .returning(Cypher.name("p"))
+                .returning(Cypher.name("p")) // Path 전체를 반환
                 .build();
 
         String queryString = Renderer.getDefaultRenderer().render(statement);
         System.out.println("Generated Query: " + queryString);
 
-        // 3. 실행
+        // ---------------------------------------------------------
+        // 3. 실행 및 데이터 분류 (수정된 부분)
+        // ---------------------------------------------------------
         Collection<Map<String, Object>> queryResult = neo4jClient.query(queryString)
                 .bindAll(statement.getCatalog().getParameters())
                 .fetch()
                 .all();
 
-        // 4. 결과 변환
-        return convertToCytoscapeElements(queryResult);
+        // 4. 결과 변환 (Nodes와 Edges 리스트 분리)
+        return convertToGroupData(queryResult);
     }
 
     // --- Helper Methods ---
@@ -183,43 +185,65 @@ public class GraphSearchService {
     }
 
     // --- 변환 로직 (기존 유지) ---
-    private List<Map<String, Object>> convertToCytoscapeElements(Collection<Map<String, Object>> queryResult) {
-        Set<String> processedNodeIds = new HashSet<>();
-        Set<String> processedEdgeIds = new HashSet<>();
-        List<Map<String, Object>> elements = new ArrayList<>();
+    private List<GraphSearchResponseDto> convertToGroupData(Collection<Map<String, Object>> queryResult) {
+        List<Map<String, Object>> nodeList = new ArrayList<>();
+        List<Map<String, Object>> edgeList = new ArrayList<>();
 
+        Set<String> visitedNodeIds = new HashSet<>();
+        Set<String> visitedEdgeIds = new HashSet<>();
+
+        // 결과 순회
         for (Map<String, Object> row : queryResult) {
-            Path path = (Path) row.get("p");
-            path.nodes().forEach(node -> {
-                String id = node.elementId();
-                if (!processedNodeIds.contains(id)) {
-                    Map<String, Object> element = new HashMap<>();
-                    element.put("group", "nodes");
-                    Map<String, Object> data = new HashMap<>(node.asMap());
-                    data.put("id", id);
-                    data.put("label", node.labels().iterator().hasNext() ? node.labels().iterator().next() : "");
-                    data.put("labels", node.labels());
-                    element.put("data", data);
-                    elements.add(element);
-                    processedNodeIds.add(id);
-                }
-            });
-            path.relationships().forEach(rel -> {
-                String id = rel.elementId();
-                if (!processedEdgeIds.contains(id)) {
-                    Map<String, Object> element = new HashMap<>();
-                    element.put("group", "edges");
-                    Map<String, Object> data = new HashMap<>(rel.asMap());
-                    data.put("id", id);
-                    data.put("source", rel.startNodeElementId());
-                    data.put("target", rel.endNodeElementId());
-                    data.put("label", rel.type());
-                    element.put("data", data);
-                    elements.add(element);
-                    processedEdgeIds.add(id);
-                }
-            });
+            // 쿼리에서 returning(Cypher.name("p"))로 Path를 반환했으므로
+            Object p = row.get("p");
+
+            if (p instanceof Path path) {
+                // 1. Path 내부의 모든 노드 추출
+                path.nodes().forEach(node -> {
+                    String id = node.elementId();
+                    if (!visitedNodeIds.contains(id)) {
+                        visitedNodeIds.add(id);
+
+                        Map<String, Object> nodeData = new HashMap<>(node.asMap());
+                        nodeData.put("id", id);
+                        // 라벨 처리 (첫번째 라벨 사용)
+                        nodeData.put("label", node.labels().iterator().hasNext() ? node.labels().iterator().next() : "");
+
+                        nodeList.add(nodeData);
+                    }
+                });
+
+                // 2. Path 내부의 모든 관계(엣지) 추출
+                path.relationships().forEach(rel -> {
+                    String id = rel.elementId();
+                    if (!visitedEdgeIds.contains(id)) {
+                        visitedEdgeIds.add(id);
+
+                        Map<String, Object> relData = new HashMap<>(rel.asMap());
+                        relData.put("id", id);
+                        relData.put("source", rel.startNodeElementId());
+                        relData.put("target", rel.endNodeElementId());
+                        relData.put("label", rel.type()); // 관계 타입
+
+                        edgeList.add(relData);
+                    }
+                });
+            }
         }
-        return elements;
+
+        // 최종 결과 생성: [ {group: nodes, data: [...]}, {group: edges, data: [...]} ]
+        List<GraphSearchResponseDto> result = new ArrayList<>();
+
+        result.add(GraphSearchResponseDto.builder()
+                .group("nodes")
+                .data(nodeList)
+                .build());
+
+        result.add(GraphSearchResponseDto.builder()
+                .group("edges")
+                .data(edgeList)
+                .build());
+
+        return result;
     }
 }
