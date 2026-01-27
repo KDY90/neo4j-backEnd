@@ -43,7 +43,7 @@ public class GraphCommonController {
     }
 
     @PostMapping("/search")
-    public Collection<GraphSearchResponseDto> searchGraph(@RequestBody GraphSearchRequestDto requestDto) {
+    public GraphSearchResponseDto searchGraph(@RequestBody GraphSearchRequestDto requestDto) {
         // 결과는 Neo4j Path 객체들이 포함된 Map 리스트로 반환됩니다.
         // 프론트엔드에서는 이 결과(p)를 파싱하여 시각화하면 됩니다.
         return graphSearchService.searchByCyphers(requestDto.getCyphers());
