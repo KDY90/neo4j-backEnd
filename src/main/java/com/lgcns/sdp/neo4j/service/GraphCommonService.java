@@ -16,6 +16,7 @@ public class GraphCommonService {
 
     private final GraphCommonRepository graphCommonRepository;
 
+
     public Collection<GraphSchemaDto> getSchemaInfo() {
         return graphCommonRepository.findSchemaInfo();
     }
@@ -31,4 +32,5 @@ public class GraphCommonService {
     public Collection<Map<String, Object>> executeCypher(String query) {
         return graphCommonRepository.executeRawCypher(query);
     }
+
 }

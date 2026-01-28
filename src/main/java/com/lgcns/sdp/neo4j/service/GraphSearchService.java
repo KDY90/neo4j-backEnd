@@ -2,18 +2,9 @@ package com.lgcns.sdp.neo4j.service;
 
 import com.lgcns.sdp.neo4j.dto.GraphSearchRequestDto.CypherBlock;
 import com.lgcns.sdp.neo4j.dto.GraphSearchResponseDto;
+import com.lgcns.sdp.neo4j.util.GraphUtil;
 import lombok.RequiredArgsConstructor;
-
-import org.neo4j.cypherdsl.core.Condition;
-import org.neo4j.cypherdsl.core.Cypher;
-import org.neo4j.cypherdsl.core.ExposesRelationships;
-import org.neo4j.cypherdsl.core.Expression;
-import org.neo4j.cypherdsl.core.Node;
-import org.neo4j.cypherdsl.core.PatternElement;
-import org.neo4j.cypherdsl.core.Property;
-import org.neo4j.cypherdsl.core.PropertyContainer;
-import org.neo4j.cypherdsl.core.Relationship;
-import org.neo4j.cypherdsl.core.Statement;
+import org.neo4j.cypherdsl.core.*;
 import org.neo4j.cypherdsl.core.renderer.Renderer;
 import org.neo4j.driver.types.Path;
 import org.springframework.data.neo4j.core.Neo4jClient;
@@ -21,12 +12,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class GraphSearchService {
 
     private final Neo4jClient neo4jClient;
+    private final GraphUtil graphUtil;
+
 
     @Transactional(readOnly = true)
     public GraphSearchResponseDto searchByCyphers(List<CypherBlock> cyphers) {
@@ -207,6 +201,8 @@ public class GraphSearchService {
         Set<String> visitedNodeIds = new HashSet<>();
         Set<String> visitedEdgeIds = new HashSet<>();
 
+        Map<String, Map<String, Object>> styleCache = new HashMap<>();
+
         for (Map<String, Object> row : queryResult) {
             Object p = row.get("p");
 
@@ -217,8 +213,16 @@ public class GraphSearchService {
                     if (!visitedNodeIds.contains(id)) {
                         visitedNodeIds.add(id);
                         Map<String, Object> nodeData = new HashMap<>(node.asMap());
+                        String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "";
+
                         nodeData.put("id", id);
                         nodeData.put("label", node.labels().iterator().hasNext() ? node.labels().iterator().next() : "");
+
+                        Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
+                        if (style != null) {
+                            nodeData.putAll(style);
+                        }
+
                         nodeList.add(nodeData);
                     }
                 });
@@ -229,10 +233,19 @@ public class GraphSearchService {
                     if (!visitedEdgeIds.contains(id)) {
                         visitedEdgeIds.add(id);
                         Map<String, Object> relData = new HashMap<>(rel.asMap());
+
+                        String label = rel.type();
+
                         relData.put("id", id);
                         relData.put("source", rel.startNodeElementId());
                         relData.put("target", rel.endNodeElementId());
-                        relData.put("label", rel.type());
+                        relData.put("label", label);
+
+                        Map<String, Object> style = graphUtil.getStyleConfig(label, "RELATIONSHIP", styleCache);
+                        if (style != null) {
+                            relData.putAll(style);
+                        }
+
                         edgeList.add(relData);
                     }
                 });
@@ -244,4 +257,5 @@ public class GraphSearchService {
                 .relationships(edgeList)
                 .build();
     }
+
 }

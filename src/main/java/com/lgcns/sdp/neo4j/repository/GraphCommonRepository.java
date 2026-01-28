@@ -4,6 +4,7 @@ import com.lgcns.sdp.neo4j.constant.GraphQueryType;
 import com.lgcns.sdp.neo4j.dto.GraphLabelCountDto;
 import com.lgcns.sdp.neo4j.dto.GraphSchemaDto;
 import com.lgcns.sdp.neo4j.dto.GraphSearchBarDto;
+import com.lgcns.sdp.neo4j.util.GraphUtil;
 import lombok.RequiredArgsConstructor;
 import org.neo4j.driver.Value;
 import org.springframework.data.neo4j.core.Neo4jClient;
@@ -17,6 +18,8 @@ import java.util.*;
 public class GraphCommonRepository {
 
     private final Neo4jClient neo4jClient;
+    private final GraphUtil graphUtil;
+
 
     @Transactional(readOnly = true)
     public Collection<GraphSchemaDto> findSchemaInfo() {
@@ -50,11 +53,18 @@ public class GraphCommonRepository {
         return neo4jClient.query(GraphQueryType.SEARCH_BAR.getQuery())
                 .fetchAs(GraphSearchBarDto.class)
                 .mappedBy((typeSystem, record) -> {
+
+                    // [1] 스타일 조회를 위한 로컬 캐시 생성 (요청 1번당 1개)
+                    Map<String, Map<String, Object>> styleCache = new HashMap<>();
+
                     Value schema = record.get("schema");
+
+                    // --- 1. 노드 처리 ---
                     List<Value> nodesList = schema.get("nodes").asList(v -> v);
                     List<GraphSearchBarDto.NodeSchema> nodeSchemas = nodesList.stream()
                             .map(nodeVal -> {
                                 String label = nodeVal.get("label").asString();
+
                                 List<Value> propsVal = nodeVal.get("properties").asList(v -> v);
                                 List<GraphSearchBarDto.PropertySchema> propertySchemas = propsVal
                                         .stream()
@@ -62,12 +72,20 @@ public class GraphCommonRepository {
                                                 p.get("key").asString(),
                                                 p.get("type").asString()))
                                         .toList();
-                                return new GraphSearchBarDto.NodeSchema(label, propertySchemas);
+
+                                // [2] 노드 스타일 조회 (캐시 사용)
+                                Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
+
+                                // 생성자에 style Map 전달 -> DTO 내부 @JsonAnyGetter가 처리
+                                return new GraphSearchBarDto.NodeSchema(label, propertySchemas, style);
                             }).toList();
+
+                    // --- 2. 관계(Relationship) 처리 ---
                     List<Value> relsList = schema.get("relationships").asList(v -> v);
                     List<GraphSearchBarDto.RelationshipSchema> relSchemas = relsList.stream()
                             .map(relVal -> {
                                 String relationshipName = relVal.get("relationship").asString();
+
                                 List<Value> connectionVals = relVal.get("list").asList(v -> v);
                                 List<GraphSearchBarDto.ConnectionSchema> connections = connectionVals.stream()
                                         .map(conn -> new GraphSearchBarDto.ConnectionSchema(
@@ -75,9 +93,15 @@ public class GraphCommonRepository {
                                                 conn.get("tail").asString()
                                         ))
                                         .toList();
-                                return new GraphSearchBarDto.RelationshipSchema(relationshipName, connections);
+
+                                // [3] 관계 스타일 조회 (캐시 사용)
+                                Map<String, Object> style = graphUtil.getStyleConfig(relationshipName, "RELATIONSHIP", styleCache);
+
+                                // 생성자에 style Map 전달
+                                return new GraphSearchBarDto.RelationshipSchema(relationshipName, connections, style);
                             })
                             .toList();
+
                     return new GraphSearchBarDto(nodeSchemas, relSchemas);
                 })
                 .one()
@@ -107,4 +131,5 @@ public class GraphCommonRepository {
                 .fetch()
                 .all();
     }
+
 }
