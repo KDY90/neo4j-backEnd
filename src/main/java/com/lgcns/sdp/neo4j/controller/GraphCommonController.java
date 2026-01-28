@@ -48,4 +48,11 @@ public class GraphCommonController {
         // 프론트엔드에서는 이 결과(p)를 파싱하여 시각화하면 됩니다.
         return graphSearchService.searchByCyphers(requestDto.getCyphers());
     }
+
+
+    @GetMapping("/node/{elementId}/neighbors")
+    public ResponseEntity<GraphDetailDto> getNodeNeighbors(@PathVariable String elementId) {
+        return ResponseEntity.ok(graphCommonService.findNodeAndNeighbors(elementId));
+    }
+
 }

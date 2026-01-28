@@ -1,5 +1,6 @@
 package com.lgcns.sdp.neo4j.service;
 
+import com.lgcns.sdp.neo4j.dto.GraphDetailDto;
 import com.lgcns.sdp.neo4j.dto.GraphLabelCountDto;
 import com.lgcns.sdp.neo4j.dto.GraphSchemaDto;
 import com.lgcns.sdp.neo4j.dto.GraphSearchBarDto;
@@ -37,5 +38,10 @@ public class GraphCommonService {
         return graphCommonRepository.executeRawCypher(query);
     }
 
+
+    public GraphDetailDto findNodeAndNeighbors(String elementId) {
+
+        return graphCommonRepository.findNodeAndNeighbors(elementId);
+    }
 
 }
