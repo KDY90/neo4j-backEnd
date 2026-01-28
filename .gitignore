@@ -1,0 +1,32 @@
+# 컴파일된 클래스 파일 무시
+*.class
+
+# 로그 파일 무시
+*.log
+
+# 패키징된 파일 무시 (.jar, .war 등)
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+
+# Maven 빌드 디렉토리 (target 폴더 통째로 무시) - 가장 중요!
+target/
+**/target/
+
+# IntelliJ 설정 파일 무시 (팀 공유 시 보통 제외함)
+.idea/
+*.iml
+*.iws
+
+# 기타 OS 및 툴 파일
+.DS_Store
+Thumbs.db
+utils/MobaXterm*
+# application.yml (또는 application-secret.yml 등)
+application*.yml
+application*.yaml
+
+# 기존에 있던 모든 yml 무시는 주석 처리하거나 삭제
+# *.yml
