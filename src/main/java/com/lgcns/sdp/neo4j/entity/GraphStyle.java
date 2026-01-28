@@ -50,4 +50,17 @@ public class GraphStyle {
     @UpdateTimestamp
     @Column(name = "update_timestamp")
     private LocalDateTime updateTimestamp;
+
+    public void updateStyleConfig(Map<String, Object> newConfig) {
+        if (newConfig == null || newConfig.isEmpty()) {
+            return;
+        }
+        if (this.styleConfig == null) {
+            this.styleConfig = newConfig;
+
+        } else {
+            this.styleConfig.putAll(newConfig);
+        }
+    }
+
 }
