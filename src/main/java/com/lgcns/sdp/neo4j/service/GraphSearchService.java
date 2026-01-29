@@ -220,7 +220,7 @@ public class GraphSearchService {
 
                         Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
                         if (style != null) {
-                            nodeData.putAll(style);
+                            nodeData.put("style", style);
                         }
 
                         nodeList.add(nodeData);
@@ -243,7 +243,7 @@ public class GraphSearchService {
 
                         Map<String, Object> style = graphUtil.getStyleConfig(label, "RELATIONSHIP", styleCache);
                         if (style != null) {
-                            relData.putAll(style);
+                            relData.put("style", style);
                         }
 
                         edgeList.add(relData);
