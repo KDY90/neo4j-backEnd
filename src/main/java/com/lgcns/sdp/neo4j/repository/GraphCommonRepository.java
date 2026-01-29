@@ -139,38 +139,41 @@ public class GraphCommonRepository {
         Map<String, Map<String, Object>> uniqueNodes = new HashMap<>();
         Map<String, Map<String, Object>> uniqueRels = new HashMap<>();
 
-        // [핵심 1] 노드 ID와 라벨을 매핑할 Map 생성
+        // 1. 노드 ID와 라벨 매핑용 Map
         Map<String, String> nodeIdToLabelMap = new HashMap<>();
+
+        // [추가] 2. 스타일 캐시 생성 (요청 1회당 1개)
+        Map<String, Map<String, Object>> styleCache = new HashMap<>();
 
         Map<String, Object> centerNodeData = null;
 
         for (Map<String, Object> row : result) {
-            // 1. 중심 노드 (n) 처리
+            // --- 1. 중심 노드 (n) 처리 ---
             Entity centerEntity = (Entity) row.get("n");
-            Map<String, Object> centerMap = mapNodeToMap(centerEntity);
-            uniqueNodes.put(centerEntity.elementId(), centerMap);
 
-            // [핵심 2] 중심 노드 ID -> 라벨 저장
+            // [변경] mapNodeToMap 호출 시 styleCache 전달
+            Map<String, Object> centerMap = mapNodeToMap(centerEntity, styleCache);
+
+            uniqueNodes.put(centerEntity.elementId(), centerMap);
             saveNodeLabel(centerEntity, nodeIdToLabelMap);
 
             if (centerNodeData == null) {
                 centerNodeData = centerMap;
             }
 
-            // 2. 이웃 노드 (connectedNode) 처리
+            // --- 2. 이웃 노드 (connectedNode) 처리 ---
             Entity neighborEntity = (Entity) row.get("connectedNode");
             if (neighborEntity != null) {
-                uniqueNodes.put(neighborEntity.elementId(), mapNodeToMap(neighborEntity));
-
-                // [핵심 3] 이웃 노드 ID -> 라벨 저장
+                // [변경] mapNodeToMap 호출 시 styleCache 전달
+                uniqueNodes.put(neighborEntity.elementId(), mapNodeToMap(neighborEntity, styleCache));
                 saveNodeLabel(neighborEntity, nodeIdToLabelMap);
             }
 
-            // 3. 관계 (r) 처리
+            // --- 3. 관계 (r) 처리 ---
             Entity relationship = (Entity) row.get("r");
             if (relationship != null) {
-                // [핵심 4] 여기서 labelMap을 같이 넘겨줍니다.
-                uniqueRels.put(relationship.elementId(), mapRelationshipToMap(relationship, nodeIdToLabelMap));
+                // [변경] mapRelationshipToMap 호출 시 styleCache 전달
+                uniqueRels.put(relationship.elementId(), mapRelationshipToMap(relationship, nodeIdToLabelMap, styleCache));
             }
         }
 
@@ -184,43 +187,73 @@ public class GraphCommonRepository {
     private void saveNodeLabel(Entity entity, Map<String, String> map) {
         if (entity instanceof Node) {
             Node node = (Node) entity;
-            String label = "Node"; // 기본값
+            String label = "Node";
             if (node.labels().iterator().hasNext()) {
-                label = node.labels().iterator().next(); // 첫 번째 라벨 사용
+                label = node.labels().iterator().next();
             }
             map.put(node.elementId(), label);
         }
     }
 
     // (참고) Neo4j Node 객체를 Map으로 바꾸는 메서드 (기존 로직 활용)
-    private Map<String, Object> mapNodeToMap(Entity node) {
+    private Map<String, Object> mapNodeToMap(Entity node, Map<String, Map<String, Object>> styleCache) {
         Map<String, Object> map = new HashMap<>(node.asMap());
-        map.put("id", node.elementId()); // 시스템 ID를 'id' 필드로 넣어줌
+        map.put("id", node.elementId());
 
-        // 라벨 처리 (여러 개일 수 있음)
         if (node instanceof Node) {
-            map.put("labels", ((Node) node).labels());
-            // 프론트엔드 호환성을 위해 대표 라벨 하나를 'type'이나 'label' 필드로 넣어주면 좋음
-            map.put("type", ((Node) node).labels().iterator().next());
+            Node n = (Node) node;
+            map.put("labels", n.labels());
+
+            // 대표 라벨 추출
+            String label = "Node";
+            if (n.labels().iterator().hasNext()) {
+                label = n.labels().iterator().next();
+            }
+            map.put("type", label);
+
+            // [추가] 스타일 조회 및 적용
+            // 라벨을 기준으로 스타일을 가져와서 'style' 키에 저장
+            Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
+            if (style != null) {
+                map.put("style", style);
+            }
         }
         return map;
     }
 
     // (참고) Neo4j Relationship 객체를 Map으로 바꾸는 메서드
-    private Map<String, Object> mapRelationshipToMap(Entity rel, Map<String, String> nodeIdToLabelMap) {
+    private Map<String, Object> mapRelationshipToMap(Entity rel, Map<String, String> nodeIdToLabelMap, Map<String, Map<String, Object>> styleCache) {
         Map<String, Object> map = new HashMap<>(rel.asMap());
         map.put("id", rel.elementId());
 
         if (rel instanceof Relationship) {
             Relationship r = (Relationship) rel;
-            map.put("label", r.type());
+            String type = r.type();
+            map.put("label", type);
 
-            // [핵심] ID를 키로 사용하여 Label Map에서 라벨을 가져옴 (없으면 Unknown)
             String sourceId = r.startNodeElementId();
             String targetId = r.endNodeElementId();
 
-            map.put("sourceLabel", nodeIdToLabelMap.getOrDefault(sourceId, "Unknown"));
-            map.put("targetLabel", nodeIdToLabelMap.getOrDefault(targetId, "Unknown"));
+            String sourceLabel = nodeIdToLabelMap.getOrDefault(sourceId, "Unknown");
+            String targetLabel = nodeIdToLabelMap.getOrDefault(targetId, "Unknown");
+
+            map.put("sourceLabel", sourceLabel);
+            map.put("targetLabel", targetLabel);
+
+            Map<String, Object> sourceStyle = graphUtil.getStyleConfig(sourceLabel, "NODE", styleCache);
+            if (sourceStyle != null) {
+                map.put("sourceStyle", sourceStyle);
+            }
+
+            Map<String, Object> targetStyle = graphUtil.getStyleConfig(targetLabel, "NODE", styleCache);
+            if (targetStyle != null) {
+                map.put("targetStyle", targetStyle);
+            }
+
+            Map<String, Object> relStyle = graphUtil.getStyleConfig(type, "RELATIONSHIP", styleCache);
+            if (relStyle != null) {
+                map.put("style", relStyle); // 관계 자체의 스타일
+            }
         }
         return map;
     }
