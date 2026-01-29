@@ -139,18 +139,20 @@ public class GraphCommonRepository {
         Map<String, Map<String, Object>> uniqueNodes = new HashMap<>();
         Map<String, Map<String, Object>> uniqueRels = new HashMap<>();
 
-        // [추가] 중심 노드 데이터를 담을 변수
+        // [핵심 1] 노드 ID와 라벨을 매핑할 Map 생성
+        Map<String, String> nodeIdToLabelMap = new HashMap<>();
+
         Map<String, Object> centerNodeData = null;
 
         for (Map<String, Object> row : result) {
             // 1. 중심 노드 (n) 처리
             Entity centerEntity = (Entity) row.get("n");
             Map<String, Object> centerMap = mapNodeToMap(centerEntity);
-
-            // map에 넣어 중복 제거 (전체 nodes 리스트용)
             uniqueNodes.put(centerEntity.elementId(), centerMap);
 
-            // [핵심] 중심 노드는 모든 행에 동일하게 들어있으므로, 한 번만 저장해두면 됨
+            // [핵심 2] 중심 노드 ID -> 라벨 저장
+            saveNodeLabel(centerEntity, nodeIdToLabelMap);
+
             if (centerNodeData == null) {
                 centerNodeData = centerMap;
             }
@@ -159,20 +161,35 @@ public class GraphCommonRepository {
             Entity neighborEntity = (Entity) row.get("connectedNode");
             if (neighborEntity != null) {
                 uniqueNodes.put(neighborEntity.elementId(), mapNodeToMap(neighborEntity));
+
+                // [핵심 3] 이웃 노드 ID -> 라벨 저장
+                saveNodeLabel(neighborEntity, nodeIdToLabelMap);
             }
 
             // 3. 관계 (r) 처리
             Entity relationship = (Entity) row.get("r");
             if (relationship != null) {
-                uniqueRels.put(relationship.elementId(), mapRelationshipToMap(relationship));
+                // [핵심 4] 여기서 labelMap을 같이 넘겨줍니다.
+                uniqueRels.put(relationship.elementId(), mapRelationshipToMap(relationship, nodeIdToLabelMap));
             }
         }
 
         return GraphDetailDto.builder()
-                .centerNode(centerNodeData) // [추가] DTO에 중심 노드 설정
+                .centerNode(centerNodeData)
                 .nodes(new ArrayList<>(uniqueNodes.values()))
                 .relationships(new ArrayList<>(uniqueRels.values()))
                 .build();
+    }
+
+    private void saveNodeLabel(Entity entity, Map<String, String> map) {
+        if (entity instanceof Node) {
+            Node node = (Node) entity;
+            String label = "Node"; // 기본값
+            if (node.labels().iterator().hasNext()) {
+                label = node.labels().iterator().next(); // 첫 번째 라벨 사용
+            }
+            map.put(node.elementId(), label);
+        }
     }
 
     // (참고) Neo4j Node 객체를 Map으로 바꾸는 메서드 (기존 로직 활용)
@@ -190,15 +207,20 @@ public class GraphCommonRepository {
     }
 
     // (참고) Neo4j Relationship 객체를 Map으로 바꾸는 메서드
-    private Map<String, Object> mapRelationshipToMap(Entity rel) {
+    private Map<String, Object> mapRelationshipToMap(Entity rel, Map<String, String> nodeIdToLabelMap) {
         Map<String, Object> map = new HashMap<>(rel.asMap());
         map.put("id", rel.elementId());
 
         if (rel instanceof Relationship) {
             Relationship r = (Relationship) rel;
-            map.put("type", r.type());
-            map.put("source", r.startNodeElementId());
-            map.put("target", r.endNodeElementId());
+            map.put("label", r.type());
+
+            // [핵심] ID를 키로 사용하여 Label Map에서 라벨을 가져옴 (없으면 Unknown)
+            String sourceId = r.startNodeElementId();
+            String targetId = r.endNodeElementId();
+
+            map.put("sourceLabel", nodeIdToLabelMap.getOrDefault(sourceId, "Unknown"));
+            map.put("targetLabel", nodeIdToLabelMap.getOrDefault(targetId, "Unknown"));
         }
         return map;
     }
