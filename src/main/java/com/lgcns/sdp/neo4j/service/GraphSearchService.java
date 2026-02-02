@@ -203,22 +203,36 @@ public class GraphSearchService {
 
         Map<String, Map<String, Object>> styleCache = new HashMap<>();
 
+        // [추가] 관계 처리 시 노드 정보를 참조하기 위한 로컬 캐시 (ID -> {label, style})
+        Map<String, Map<String, Object>> nodeInfoMap = new HashMap<>();
+
         for (Map<String, Object> row : queryResult) {
             Object p = row.get("p");
 
             if (p instanceof Path path) {
-                // 노드 추출
+                // 1. 노드 추출 및 정보 캐싱
                 path.nodes().forEach(node -> {
                     String id = node.elementId();
+                    String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "";
+
+                    // 스타일 조회
+                    Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
+
+                    // [추가] 노드 정보를 맵에 저장 (관계 처리 시 사용)
+                    Map<String, Object> info = new HashMap<>();
+                    info.put("label", label);
+                    if (style != null) {
+                        info.put("style", style);
+                    }
+                    nodeInfoMap.put(id, info);
+
+                    // 결과 리스트에 추가 (중복 방지)
                     if (!visitedNodeIds.contains(id)) {
                         visitedNodeIds.add(id);
                         Map<String, Object> nodeData = new HashMap<>(node.asMap());
-                        String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "";
 
                         nodeData.put("id", id);
-                        nodeData.put("label", node.labels().iterator().hasNext() ? node.labels().iterator().next() : "");
-
-                        Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
+                        nodeData.put("label", label);
                         if (style != null) {
                             nodeData.put("style", style);
                         }
@@ -227,7 +241,7 @@ public class GraphSearchService {
                     }
                 });
 
-                // 관계 추출
+                // 2. 관계 추출 및 Source/Target 정보 주입
                 path.relationships().forEach(rel -> {
                     String id = rel.elementId();
                     if (!visitedEdgeIds.contains(id)) {
@@ -235,15 +249,32 @@ public class GraphSearchService {
                         Map<String, Object> relData = new HashMap<>(rel.asMap());
 
                         String label = rel.type();
+                        String sourceId = rel.startNodeElementId();
+                        String targetId = rel.endNodeElementId();
 
                         relData.put("id", id);
-                        relData.put("source", rel.startNodeElementId());
-                        relData.put("target", rel.endNodeElementId());
+                        relData.put("source", sourceId);
+                        relData.put("target", targetId);
                         relData.put("label", label);
 
+                        // 스타일 추가
                         Map<String, Object> style = graphUtil.getStyleConfig(label, "RELATIONSHIP", styleCache);
                         if (style != null) {
                             relData.put("style", style);
+                        }
+
+                        // [핵심 추가] Source 노드 정보 주입
+                        if (nodeInfoMap.containsKey(sourceId)) {
+                            Map<String, Object> sourceInfo = nodeInfoMap.get(sourceId);
+                            relData.put("sourceLabel", sourceInfo.get("label"));
+                            relData.put("sourceStyle", sourceInfo.get("style"));
+                        }
+
+                        // [핵심 추가] Target 노드 정보 주입
+                        if (nodeInfoMap.containsKey(targetId)) {
+                            Map<String, Object> targetInfo = nodeInfoMap.get(targetId);
+                            relData.put("targetLabel", targetInfo.get("label"));
+                            relData.put("targetStyle", targetInfo.get("style"));
                         }
 
                         edgeList.add(relData);
