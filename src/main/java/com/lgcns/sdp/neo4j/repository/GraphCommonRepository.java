@@ -237,6 +237,9 @@ public class GraphCommonRepository {
             String sourceLabel = nodeIdToLabelMap.getOrDefault(sourceId, "Unknown");
             String targetLabel = nodeIdToLabelMap.getOrDefault(targetId, "Unknown");
 
+            map.put("source", sourceId);
+            map.put("target", targetId);
+
             map.put("sourceLabel", sourceLabel);
             map.put("targetLabel", targetLabel);
 
