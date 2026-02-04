@@ -20,6 +20,11 @@ public class GraphCypherQueryController {
         return ResponseEntity.ok(graphCypherQueryService.getAllQueries());
     }
 
+    @GetMapping("/valid")
+    public ResponseEntity<List<GraphCypherQueryDto>> getValidQueries() {
+        return ResponseEntity.ok(graphCypherQueryService.getValidQueries());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<GraphCypherQueryDto> getQueryById(@PathVariable Long id) {
         return ResponseEntity.ok(graphCypherQueryService.getQueryById(id));

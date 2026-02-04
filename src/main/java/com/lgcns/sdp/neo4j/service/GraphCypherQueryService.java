@@ -18,9 +18,21 @@ import java.util.stream.Collectors;
 public class GraphCypherQueryService {
 
     private final GraphCypherQueryRepository graphCypherQueryRepository;
+    private final com.lgcns.sdp.neo4j.repository.GraphCommonRepository graphCommonRepository;
 
     public List<GraphCypherQueryDto> getAllQueries() {
         return graphCypherQueryRepository.findAll().stream()
+                .map(GraphCypherQueryDto::from)
+                .collect(Collectors.toList());
+    }
+
+    public List<GraphCypherQueryDto> getValidQueries() {
+        return graphCypherQueryRepository.findAll().stream()
+                .filter(entity -> {
+                    java.util.Map<String, Object> validationResult = graphCommonRepository
+                            .validateCypher(entity.getCypherQuery());
+                    return Boolean.TRUE.equals(validationResult.get("valid"));
+                })
                 .map(GraphCypherQueryDto::from)
                 .collect(Collectors.toList());
     }
