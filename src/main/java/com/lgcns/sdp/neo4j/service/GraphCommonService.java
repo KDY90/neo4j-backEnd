@@ -38,6 +38,9 @@ public class GraphCommonService {
         return graphCommonRepository.executeRawCypher(query);
     }
 
+    public Map<String, Object> validateQuery(String query) {
+        return graphCommonRepository.validateCypher(query);
+    }
 
     public GraphDetailDto findNodeAndNeighbors(String elementId) {
 

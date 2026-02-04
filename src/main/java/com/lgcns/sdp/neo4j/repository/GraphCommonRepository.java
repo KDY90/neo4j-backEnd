@@ -15,7 +15,6 @@ import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-
 import java.util.*;
 
 @Repository
@@ -24,13 +23,14 @@ public class GraphCommonRepository {
 
     private final Neo4jClient neo4jClient;
     private final GraphUtil graphUtil;
-
+    private final org.neo4j.driver.Driver driver;
 
     @Transactional(readOnly = true)
     public Collection<GraphSchemaDto> findSchemaInfo() {
         return neo4jClient.query(GraphQueryType.SCHEMA_INFO.getQuery()) // Enum 호출
-                .fetchAs(GraphSchemaDto.class)
-                .mappedBy((typeSystem, record) -> {
+                .fetchAs(GraphSchemaDto.class).mappedBy((typeSystem, record) ->
+
+                {
                     String label = record.get("label").asString();
                     List<Value> propsList = record.get("propsList").asList(v -> v);
 
@@ -39,8 +39,7 @@ public class GraphCommonRepository {
                         propertiesMap.put(val.get("name").asString(), val.get("type").asString());
                     }
                     return new GraphSchemaDto(label, propertiesMap);
-                })
-                .all();
+                }).all();
     }
 
     @Transactional(readOnly = true)
@@ -95,12 +94,12 @@ public class GraphCommonRepository {
                                 List<GraphSearchBarDto.ConnectionSchema> connections = connectionVals.stream()
                                         .map(conn -> new GraphSearchBarDto.ConnectionSchema(
                                                 conn.get("header").asString(),
-                                                conn.get("tail").asString()
-                                        ))
+                                                conn.get("tail").asString()))
                                         .toList();
 
                                 // [3] 관계 스타일 조회 (캐시 사용)
-                                Map<String, Object> style = graphUtil.getStyleConfig(relationshipName, "RELATIONSHIP", styleCache);
+                                Map<String, Object> style = graphUtil.getStyleConfig(relationshipName, "RELATIONSHIP",
+                                        styleCache);
 
                                 // 생성자에 style Map 전달
                                 return new GraphSearchBarDto.RelationshipSchema(relationshipName, connections, style);
@@ -112,7 +111,6 @@ public class GraphCommonRepository {
                 .one()
                 .orElse(new GraphSearchBarDto(Collections.emptyList(), Collections.emptyList()));
     }
-
 
     // (참고) 결과를 Nodes와 Relationships 리스트로 분리하는 헬퍼 메서드
     @Transactional(readOnly = true)
@@ -173,7 +171,8 @@ public class GraphCommonRepository {
             Entity relationship = (Entity) row.get("r");
             if (relationship != null) {
                 // [변경] mapRelationshipToMap 호출 시 styleCache 전달
-                uniqueRels.put(relationship.elementId(), mapRelationshipToMap(relationship, nodeIdToLabelMap, styleCache));
+                uniqueRels.put(relationship.elementId(),
+                        mapRelationshipToMap(relationship, nodeIdToLabelMap, styleCache));
             }
         }
 
@@ -222,7 +221,8 @@ public class GraphCommonRepository {
     }
 
     // (참고) Neo4j Relationship 객체를 Map으로 바꾸는 메서드
-    private Map<String, Object> mapRelationshipToMap(Entity rel, Map<String, String> nodeIdToLabelMap, Map<String, Map<String, Object>> styleCache) {
+    private Map<String, Object> mapRelationshipToMap(Entity rel, Map<String, String> nodeIdToLabelMap,
+            Map<String, Map<String, Object>> styleCache) {
         Map<String, Object> map = new HashMap<>(rel.asMap());
         map.put("id", rel.elementId());
 
@@ -261,6 +261,23 @@ public class GraphCommonRepository {
         return map;
     }
 
+    public Map<String, Object> validateCypher(String cypherQuery) {
+        String explainQuery = "EXPLAIN " + cypherQuery;
+        Map<String, Object> result = new HashMap<>();
+
+        // Using raw Driver session to ensure we catch exceptions directly without
+        // Spring translation/transaction interference
+        try (org.neo4j.driver.Session session = driver.session()) {
+            session.run(explainQuery).consume();
+            result.put("valid", true);
+            result.put("message", "Valid Cypher Query");
+        } catch (Exception e) {
+            result.put("valid", false);
+            // e.getMessage() usually contains the "Invalid input..." string from Neo4j
+            result.put("message", e.getMessage());
+        }
+        return result;
+    }
 
     // [3] 외부 쿼리 실행기 (보안 강화 버전)
     // readOnly = true: DB 드라이버 차원에서 쓰기 시도 시 예외 발생시킴
