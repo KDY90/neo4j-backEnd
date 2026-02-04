@@ -9,8 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "tb_graph_cypher_query",
-        schema = "vcisodb")
+@Table(name = "tb_graph_cypher_query", schema = "vcisodb")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
@@ -47,4 +46,10 @@ public class GraphCypherQuery {
     @UpdateTimestamp
     @Column(name = "update_timestamp")
     private LocalDateTime updateTimestamp;
+
+    public void update(String title, String cypherQuery, String description) {
+        this.title = title;
+        this.cypherQuery = cypherQuery;
+        this.description = description;
+    }
 }
