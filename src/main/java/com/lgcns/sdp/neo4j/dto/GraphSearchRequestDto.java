@@ -19,5 +19,6 @@ public class GraphSearchRequestDto {
         private String label;       // "Person", "WROTE", "ANY"
         private String direction;   // "OUT", "IN", "BOTH"
         private Map<String, Object> properties;
+        private Map<String, Object> savedQueryContent;
     }
 }

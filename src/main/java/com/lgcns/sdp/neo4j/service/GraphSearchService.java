@@ -32,6 +32,14 @@ public class GraphSearchService {
                     .build();
         }
 
+        Optional<CypherBlock> savedQueryBlock = cyphers.stream()
+                .filter(block -> "SAVED_QUERY".equals(block.getType()))
+                .findFirst();
+
+        if (savedQueryBlock.isPresent()) {
+            return executeSavedQuery(savedQueryBlock.get());
+        }
+
         List<Condition> whereConditions = new ArrayList<>();
 
         // 2. 첫 번째 노드 생성
@@ -191,6 +199,32 @@ public class GraphSearchService {
             case "ENDS_WITH" -> property.endsWith(valExpr);
             default -> property.isEqualTo(valExpr);
         };
+    }
+
+    private GraphSearchResponseDto executeSavedQuery(CypherBlock block) {
+        // savedQueryContent에서 cypherQuery 문자열 추출
+        // DTO 구조에 따라 getSavedQueryContent()가 Map인지 객체인지 확인 필요
+        // 여기서는 Map<String, Object>라고 가정하고 처리합니다.
+        Object contentObj = block.getSavedQueryContent();
+        String rawQuery = null;
+
+        if (contentObj instanceof Map) {
+            Map<?, ?> contentMap = (Map<?, ?>) contentObj;
+            rawQuery = (String) contentMap.get("cypherQuery");
+        }
+        // 만약 savedQueryContent가 별도 DTO 객체라면 getter 사용: block.getSavedQueryContent().getCypherQuery()
+
+        if (rawQuery == null || rawQuery.trim().isEmpty()) {
+            throw new IllegalArgumentException("저장된 쿼리 내용이 없습니다.");
+        }
+
+        // Raw Query 실행
+        Collection<Map<String, Object>> queryResult = neo4jClient.query(rawQuery)
+                .fetch()
+                .all();
+
+        // 공통 변환 로직 사용
+        return convertToGroupData(queryResult);
     }
 
     // 결과 변환 (Path -> Node/Edge List)
