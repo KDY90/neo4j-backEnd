@@ -1,5 +1,7 @@
 package com.lgcns.sdp.neo4j.controller;
 
+import com.lgcns.sdp.neo4j.dto.GraphCreateNodeRequestDto;
+import com.lgcns.sdp.neo4j.dto.GraphCreateNodeResponseDto;
 import com.lgcns.sdp.neo4j.service.GenericNodeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +22,9 @@ public class GenericNodeController {
         return ResponseEntity.ok(genericNodeService.findAllByLabel(label));
     }
 
-    @PostMapping("/{label}")
-    public ResponseEntity<Map<String, Object>> createNode(@PathVariable String label,
-            @RequestBody Map<String, Object> properties) {
-        return ResponseEntity.ok(genericNodeService.createNode(label, properties));
+    @PostMapping("/create")
+    public ResponseEntity<GraphCreateNodeResponseDto> createNode(@RequestBody GraphCreateNodeRequestDto requestDto) {
+        GraphCreateNodeResponseDto response = genericNodeService.createNode(requestDto);
+        return ResponseEntity.ok(response);
     }
 }
