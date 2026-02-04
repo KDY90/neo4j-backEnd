@@ -6,8 +6,11 @@ import com.lgcns.sdp.neo4j.util.GraphUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+// [GROUP 1] Java 기본 유틸 (여기서 Set, List, Map을 가져옵니다)
 import java.util.*;
 
+// [GROUP 2] Cypher-DSL (쿼리 생성용) - *를 쓰지 않고 필요한 것만 가져옵니다.
+// (Set은 가져오지 않아서 java.util.Set과 충돌을 막습니다)
 import org.neo4j.cypherdsl.core.Cypher;
 import org.neo4j.cypherdsl.core.Condition;
 import org.neo4j.cypherdsl.core.Statement;
@@ -19,6 +22,7 @@ import org.neo4j.cypherdsl.core.Expression;
 import org.neo4j.cypherdsl.core.RelationshipChain;
 import org.neo4j.cypherdsl.core.renderer.Renderer;
 
+// 코드 본문에서 그냥 'Node', 'Relationship'이라고 쓰면 이놈들(쿼리 생성용)입니다.
 import org.neo4j.cypherdsl.core.Node;
 import org.neo4j.cypherdsl.core.Relationship;
 
@@ -52,10 +56,11 @@ public class GraphSearchService {
             return executeSavedQuery(savedQueryBlock.get());
         }
 
-        // 2. 동적 쿼리 빌드 로직 (여기서 쓰는 Node/Relationship은 위에서 임포트한 DSL 타입입니다)
+        // 2. 동적 쿼리 빌드
         List<Condition> whereConditions = new ArrayList<>();
 
         CypherBlock firstBlock = cyphers.get(0);
+        // 여기서 Node는 위에서 import한 DSL Node입니다.
         Node rootNode = createDslNode(firstBlock, 0);
 
         collectConditions(rootNode, firstBlock, whereConditions);
@@ -73,7 +78,7 @@ public class GraphSearchService {
             currentPath = extendPath(currentPath, nextNode, relBlock, i);
 
             String relName = "r" + i;
-            // 관계에 대한 조건 생성을 위한 프록시 객체 (DSL Relationship)
+            // 관계 조건 생성을 위한 프록시
             Relationship relProxy = Cypher.anyNode()
                     .relationshipTo(Cypher.anyNode(), relBlock.getLabel())
                     .named(relName);
@@ -95,7 +100,7 @@ public class GraphSearchService {
 
         String queryString = Renderer.getDefaultRenderer().render(statement);
 
-        // 실행 (결과는 Generic Map으로 받음)
+        // 실행
         Collection<Map<String, Object>> queryResult = neo4jClient.query(queryString)
                 .bindAll(statement.getCatalog().getParameters())
                 .fetch()
@@ -127,13 +132,13 @@ public class GraphSearchService {
 
     // --- Helper Methods (Query Building) ---
 
-    // 리턴 타입 Node는 org.neo4j.cypherdsl.core.Node
     private Node createDslNode(CypherBlock block, int index) {
         return "ANY".equals(block.getLabel())
                 ? Cypher.anyNode().named("n" + index)
                 : Cypher.node(block.getLabel()).named("n" + index);
     }
 
+    // [핵심] 여기서 Relationship 처리가 추가되었습니다.
     private ExposesRelationships<?> extendPath(ExposesRelationships<?> from, Node to, CypherBlock block, int index) {
         String label = "ANY".equals(block.getLabel()) ? "" : block.getLabel();
         String direction = block.getDirection() != null ? block.getDirection() : "BOTH";
@@ -145,14 +150,23 @@ public class GraphSearchService {
                 case "IN" -> node.relationshipFrom(to, label).named(relName);
                 default -> node.relationshipBetween(to, label).named(relName);
             };
-        } else if (from instanceof RelationshipChain chain) {
+        }
+        // [수정] Relationship 타입 분기 추가 (이게 없어서 에러 났음)
+        else if (from instanceof Relationship rel) {
+            return switch (direction) {
+                case "OUT" -> rel.relationshipTo(to, label).named(relName);
+                case "IN" -> rel.relationshipFrom(to, label).named(relName);
+                default -> rel.relationshipBetween(to, label).named(relName);
+            };
+        }
+        else if (from instanceof RelationshipChain chain) {
             return switch (direction) {
                 case "OUT" -> chain.relationshipTo(to, label).named(relName);
                 case "IN" -> chain.relationshipFrom(to, label).named(relName);
                 default -> chain.relationshipBetween(to, label).named(relName);
             };
         }
-        throw new IllegalArgumentException("지원하지 않는 경로 타입입니다.");
+        throw new IllegalArgumentException("지원하지 않는 경로 타입입니다: " + from.getClass().getName());
     }
 
     private void collectConditions(PropertyContainer container, CypherBlock block, List<Condition> conditions) {
@@ -189,8 +203,7 @@ public class GraphSearchService {
 
     // =================================================================================
     // [결과 변환 로직]
-    // 중요: 여기서부터는 'org.neo4j.driver.types' 패키지를 '풀 패키지명'으로 직접 명시합니다.
-    // 상단 import는 DSL용이므로, 여기서 그냥 Node를 쓰면 에러가 납니다.
+    // 여기서는 'org.neo4j.driver.types' 패키지를 풀네임으로 씁니다.
     // =================================================================================
 
     private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult) {
@@ -224,21 +237,20 @@ public class GraphSearchService {
                                    Map<String, Map<String, Object>> nodeInfoMap) {
         if (item == null) return;
 
-        // [중요] org.neo4j.driver.types.Path
+        // org.neo4j.driver.types.Path 사용
         if (item instanceof org.neo4j.driver.types.Path) {
             org.neo4j.driver.types.Path path = (org.neo4j.driver.types.Path) item;
             path.nodes().forEach(node -> processNode(node, nodeList, visitedNodeIds, styleCache, nodeInfoMap));
             path.relationships().forEach(rel -> processRelationship(rel, edgeList, visitedEdgeIds, styleCache, nodeInfoMap));
         }
-        // [중요] org.neo4j.driver.types.Node
+        // org.neo4j.driver.types.Node 사용
         else if (item instanceof org.neo4j.driver.types.Node) {
             processNode((org.neo4j.driver.types.Node) item, nodeList, visitedNodeIds, styleCache, nodeInfoMap);
         }
-        // [중요] org.neo4j.driver.types.Relationship
+        // org.neo4j.driver.types.Relationship 사용
         else if (item instanceof org.neo4j.driver.types.Relationship) {
             processRelationship((org.neo4j.driver.types.Relationship) item, edgeList, visitedEdgeIds, styleCache, nodeInfoMap);
         }
-        // List (collect 등)
         else if (item instanceof List<?>) {
             for (Object subItem : (List<?>) item) {
                 processResultItem(subItem, nodeList, edgeList, visitedNodeIds, visitedEdgeIds, styleCache, nodeInfoMap);
@@ -246,7 +258,6 @@ public class GraphSearchService {
         }
     }
 
-    // 파라미터 타입을 Driver Node로 명시
     private void processNode(org.neo4j.driver.types.Node node,
                              List<Map<String, Object>> nodeList,
                              Set<String> visitedNodeIds,
@@ -254,7 +265,6 @@ public class GraphSearchService {
                              Map<String, Map<String, Object>> nodeInfoMap) {
 
         String id = node.elementId();
-        // Driver Node의 labels()는 Iterable<String>을 반환합니다.
         String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "Unknown";
 
         Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
@@ -266,7 +276,6 @@ public class GraphSearchService {
 
         if (!visitedNodeIds.contains(id)) {
             visitedNodeIds.add(id);
-            // Driver Node는 asMap()을 가지고 있습니다.
             Map<String, Object> nodeData = new HashMap<>(node.asMap());
             nodeData.put("id", id);
             nodeData.put("label", label);
@@ -275,7 +284,6 @@ public class GraphSearchService {
         }
     }
 
-    // 파라미터 타입을 Driver Relationship으로 명시
     private void processRelationship(org.neo4j.driver.types.Relationship rel,
                                      List<Map<String, Object>> edgeList,
                                      Set<String> visitedEdgeIds,
@@ -286,7 +294,6 @@ public class GraphSearchService {
 
         if (!visitedEdgeIds.contains(id)) {
             visitedEdgeIds.add(id);
-            // Driver Relationship은 asMap(), type(), startNodeElementId() 등을 가지고 있습니다.
             Map<String, Object> relData = new HashMap<>(rel.asMap());
 
             String label = rel.type();
