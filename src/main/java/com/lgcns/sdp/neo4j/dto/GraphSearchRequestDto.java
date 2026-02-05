@@ -11,6 +11,8 @@ public class GraphSearchRequestDto {
 
     // "토큰" 대신 "싸이퍼스(cyphers)"로 변경!
     private List<CypherBlock> cyphers;
+    private int limit;
+    private boolean caseInsensitiveSearch;
 
     @Data
     @NoArgsConstructor

@@ -1,5 +1,6 @@
 package com.lgcns.sdp.neo4j.service;
 
+import com.lgcns.sdp.neo4j.dto.GraphSearchRequestDto;
 import com.lgcns.sdp.neo4j.dto.GraphSearchRequestDto.CypherBlock;
 import com.lgcns.sdp.neo4j.dto.GraphSearchResponseDto;
 import com.lgcns.sdp.neo4j.util.GraphUtil;
@@ -39,7 +40,10 @@ public class GraphSearchService {
     private final GraphUtil graphUtil;
 
     @Transactional(readOnly = true)
-    public GraphSearchResponseDto searchByCyphers(List<CypherBlock> cyphers) {
+    public GraphSearchResponseDto searchByCyphers(GraphSearchRequestDto requestDto) {
+        List<CypherBlock> cyphers = requestDto.getCyphers();
+        int limit = requestDto.getLimit();
+
         if (cyphers == null || cyphers.isEmpty()) {
             return GraphSearchResponseDto.builder()
                     .nodes(Collections.emptyList())
@@ -53,7 +57,7 @@ public class GraphSearchService {
                 .findFirst();
 
         if (savedQueryBlock.isPresent()) {
-            return executeSavedQuery(savedQueryBlock.get());
+            return executeSavedQuery(savedQueryBlock.get(),limit);
         }
 
         // 2. 동적 쿼리 빌드
@@ -63,7 +67,7 @@ public class GraphSearchService {
         // 여기서 Node는 위에서 import한 DSL Node입니다.
         Node rootNode = createDslNode(firstBlock, 0);
 
-        collectConditions(rootNode, firstBlock, whereConditions);
+        collectConditions(rootNode, firstBlock, whereConditions ,requestDto.isCaseInsensitiveSearch());
 
         ExposesRelationships<?> currentPath = rootNode;
 
@@ -83,8 +87,8 @@ public class GraphSearchService {
                     .relationshipTo(Cypher.anyNode(), relBlock.getLabel())
                     .named(relName);
 
-            collectConditions(relProxy, relBlock, whereConditions);
-            collectConditions(nextNode, nextNodeBlock, whereConditions);
+            collectConditions(relProxy, relBlock, whereConditions,requestDto.isCaseInsensitiveSearch());
+            collectConditions(nextNode, nextNodeBlock, whereConditions,requestDto.isCaseInsensitiveSearch());
         }
 
         PatternElement finalPattern = (PatternElement) currentPath;
@@ -96,6 +100,7 @@ public class GraphSearchService {
         Statement statement = Cypher.match(Cypher.path("p").definedBy(finalPattern))
                 .where(finalCondition)
                 .returning(Cypher.name("p"))
+                .limit(limit)
                 .build();
 
         String queryString = Renderer.getDefaultRenderer().render(statement);
@@ -109,7 +114,7 @@ public class GraphSearchService {
         return convertToGroupData(queryResult);
     }
 
-    private GraphSearchResponseDto executeSavedQuery(CypherBlock block) {
+    private GraphSearchResponseDto executeSavedQuery(CypherBlock block, int limit) {
         Map<String, Object> contentMap = block.getSavedQueryContent();
         String rawQuery = "";
 
@@ -119,6 +124,10 @@ public class GraphSearchService {
 
         if (rawQuery == null || rawQuery.trim().isEmpty()) {
             throw new IllegalArgumentException("저장된 쿼리 내용이 없습니다.");
+        }
+
+        if (limit > 0 && !rawQuery.toLowerCase().contains("limit")) {
+            rawQuery += " LIMIT " + limit;
         }
 
         log.info("Executing Saved Query: {}", rawQuery);
@@ -169,7 +178,7 @@ public class GraphSearchService {
         throw new IllegalArgumentException("지원하지 않는 경로 타입입니다: " + from.getClass().getName());
     }
 
-    private void collectConditions(PropertyContainer container, CypherBlock block, List<Condition> conditions) {
+    private void collectConditions(PropertyContainer container, CypherBlock block, List<Condition> conditions,boolean caseInsensitive) {
         if (block.getProperties() == null || block.getProperties().isEmpty()) return;
 
         block.getProperties().forEach((key, val) -> {
@@ -181,15 +190,32 @@ public class GraphSearchService {
                 if (valMap.containsKey("value")) value = valMap.get("value");
                 if (valMap.containsKey("operator")) operator = (String) valMap.get("operator");
             }
-            conditions.add(buildCondition(property, operator, value));
+            conditions.add(buildCondition(property, operator, value,caseInsensitive));
         });
     }
 
-    private Condition buildCondition(Property property, String operator, Object value) {
+    private Condition buildCondition(Property property, String operator, Object value, boolean caseInsensitive) {
         if ("IS_NULL".equals(operator)) return property.isNull();
         if ("IS_NOT_NULL".equals(operator)) return property.isNotNull();
-        Expression valExpr = Cypher.literalOf(value);
 
+        // 대소문자 무시 설정이고 값이 문자열일 때만 처리
+        if (caseInsensitive && value instanceof String strValue) {
+            Expression propertyLower = Cypher.toLower(property);
+            Expression valueLower = Cypher.literalOf(strValue.toLowerCase());
+
+            return switch (operator) {
+                case "NOT_EQUALS" -> propertyLower.isNotEqualTo(valueLower);
+                case "CONTAINS" -> propertyLower.contains(valueLower);
+                case "STARTS_WITH" -> propertyLower.startsWith(valueLower);
+                case "ENDS_WITH" -> propertyLower.endsWith(valueLower);
+                case "GREATER_THAN" -> propertyLower.gt(valueLower);
+                case "LESS_THAN" -> propertyLower.lt(valueLower);
+                default -> propertyLower.isEqualTo(valueLower);
+            };
+        }
+
+        // 기본 로직 (대소문자 구분 또는 문자열이 아닌 경우)
+        Expression valExpr = Cypher.literalOf(value);
         return switch (operator) {
             case "NOT_EQUALS" -> property.isNotEqualTo(valExpr);
             case "GREATER_THAN" -> property.gt(valExpr);
@@ -200,11 +226,6 @@ public class GraphSearchService {
             default -> property.isEqualTo(valExpr);
         };
     }
-
-    // =================================================================================
-    // [결과 변환 로직]
-    // 여기서는 'org.neo4j.driver.types' 패키지를 풀네임으로 씁니다.
-    // =================================================================================
 
     private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult) {
         List<Map<String, Object>> nodeList = new ArrayList<>();

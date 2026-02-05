@@ -51,4 +51,11 @@ public class GraphScene {
     @UpdateTimestamp
     @Column(name = "update_timestamp")
     private LocalDateTime updateTimestamp;
+
+    public void update(String sceneName, String sceneQuery, Integer nodeCount, Integer relCount) {
+        this.sceneName = sceneName;
+        this.sceneQuery = sceneQuery;
+        this.nodeCount = nodeCount;
+        this.relCount = relCount;
+    }
 }
