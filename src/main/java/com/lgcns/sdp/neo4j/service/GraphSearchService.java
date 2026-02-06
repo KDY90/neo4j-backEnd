@@ -288,7 +288,45 @@ public class GraphSearchService {
         String id = node.elementId();
         String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "Unknown";
 
+        // 1. DB에서 해당 라벨의 스타일 설정을 가져옴
         Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
+
+        // 2. 화면에 표시할 캡션 리스트 추출 로직 시작
+        List<String> displayCaptions = new ArrayList<>();
+        Map<String, Object> nodeProps = node.asMap();
+
+        if (style != null && style.containsKey("captions")) {
+            List<Map<String, Object>> captions = (List<Map<String, Object>>) style.get("captions");
+
+            for (Map<String, Object> config : captions) {
+                String propertyKey = (String) config.get("property");
+                boolean showOnNode = (boolean) config.getOrDefault("showOnNode", false);
+
+                if (showOnNode) {
+                    if ("nodeLabel".equals(propertyKey)) {
+                        // [Case 1] nodeLabel인 경우 실제 노드 라벨(Category) 추가
+                        displayCaptions.add(label);
+                    } else if (nodeProps.containsKey(propertyKey)) {
+                        // [Case 2] 일반 프로퍼티인 경우 노드 속성에서 실제 Value 추출
+                        Object value = nodeProps.get(propertyKey);
+                        if (value != null) {
+                            displayCaptions.add(value.toString());
+                        }
+                    }
+                }
+            }
+        }
+
+
+
+
+        // 만약 설정이 하나도 없다면 기본으로 라벨이라도 보여줌 (Fallback)
+        /*if (displayCaptions.isEmpty()) {
+            displayCaptions.add(label);
+        }*/
+
+        // 결과물: "italic" 같은 포맷팅은 프론트에서 처리하므로, 여기선 문자열만 합쳐서 보냄
+        String finalDisplayLabel = String.join(",", displayCaptions);
 
         Map<String, Object> info = new HashMap<>();
         info.put("label", label);
@@ -297,9 +335,10 @@ public class GraphSearchService {
 
         if (!visitedNodeIds.contains(id)) {
             visitedNodeIds.add(id);
-            Map<String, Object> nodeData = new HashMap<>(node.asMap());
+            Map<String, Object> nodeData = new HashMap<>(nodeProps);
             nodeData.put("id", id);
             nodeData.put("label", label);
+            nodeData.put("displayLabel", finalDisplayLabel); // 프론트에서 노드 위에 바로 띄울 텍스트
             if (style != null) nodeData.put("style", style);
             nodeList.add(nodeData);
         }
