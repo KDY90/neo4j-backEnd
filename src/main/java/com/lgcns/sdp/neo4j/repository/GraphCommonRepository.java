@@ -132,6 +132,41 @@ public class GraphCommonRepository {
         return convertToGraphDetailDto(result);
     }
 
+    @Transactional(readOnly = true)
+    public GraphDetailDto findSpecificNodeNeighbors(String elementId, String relation, String direction) {
+
+        // 1. 기본 매칭 (중심 노드)
+        String matchClause = "MATCH (n) WHERE elementId(n) = $elementId ";
+        String optionalMatch = "";
+
+        // 2. 관계 타입 처리 (relation이 있으면 [:TYPE] 추가)
+        String relType = (relation != null && !relation.trim().isEmpty()) ? ":" + relation : "";
+
+        // 3. 방향(Direction)에 따른 Cypher 패턴 조립
+        if ("OUT".equalsIgnoreCase(direction)) {
+            // (n)-[r]->(connectedNode)
+            optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]->(connectedNode)", relType);
+        } else if ("IN".equalsIgnoreCase(direction)) {
+            // (n)<-[r]-(connectedNode)
+            optionalMatch = String.format("OPTIONAL MATCH (n)<-[r%s]-(connectedNode)", relType);
+        } else {
+            // ALL: (n)-[r]-(connectedNode)
+            optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]-(connectedNode)", relType);
+        }
+
+        // 4. 최종 쿼리 완성
+        String query = matchClause + "\n" + optionalMatch + "\n RETURN n, r, connectedNode";
+
+        // 5. 실행
+        Collection<Map<String, Object>> result = neo4jClient.query(query)
+                .bind(elementId).to("elementId")
+                .fetch()
+                .all();
+
+        // 6. 기존 변환 메서드 재사용 (리턴 타입 맞추기 위함)
+        return convertToGraphDetailDto(result);
+    }
+
     // [변환 헬퍼 메서드] Raw 데이터를 GraphDetailDto로 변환
     private GraphDetailDto convertToGraphDetailDto(Collection<Map<String, Object>> result) {
         Map<String, Map<String, Object>> uniqueNodes = new HashMap<>();

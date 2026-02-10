@@ -111,7 +111,7 @@ public class GraphSearchService {
                 .fetch()
                 .all();
 
-        return convertToGroupData(queryResult);
+        return convertToGroupData(queryResult , cyphers);
     }
 
     private GraphSearchResponseDto executeSavedQuery(CypherBlock block, int limit) {
@@ -136,7 +136,7 @@ public class GraphSearchService {
                 .fetch()
                 .all();
 
-        return convertToGroupData(queryResult);
+        return convertToGroupData(queryResult,null);
     }
 
     // --- Helper Methods (Query Building) ---
@@ -227,7 +227,7 @@ public class GraphSearchService {
         };
     }
 
-    private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult) {
+    private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult ,List<CypherBlock> cyphers) {
         List<Map<String, Object>> nodeList = new ArrayList<>();
         List<Map<String, Object>> edgeList = new ArrayList<>();
 
@@ -242,6 +242,8 @@ public class GraphSearchService {
                 processResultItem(value, nodeList, edgeList, visitedNodeIds, visitedEdgeIds, styleCache, nodeInfoMap);
             }
         }
+
+        enrichWithGlobalConnectivity(nodeList,cyphers);
 
         return GraphSearchResponseDto.builder()
                 .nodes(nodeList)
@@ -380,4 +382,112 @@ public class GraphSearchService {
             edgeList.add(relData);
         }
     }
+
+    /**
+     * [신규] 노드 목록을 받아 DB에서 '전체 연결 통계'를 조회하여 주입하는 메서드
+     * 화면에 보이지 않는 관계까지 모두 포함됩니다.
+     */
+    private void enrichWithGlobalConnectivity(List<Map<String, Object>> nodeList, List<CypherBlock> cyphers) {
+        if (nodeList.isEmpty()) return;
+
+        // 1. 노드 ID 목록 추출
+        List<String> nodeIds = nodeList.stream()
+                .map(n -> String.valueOf(n.get("id")))
+                .toList();
+
+        // 2. 통계 쿼리 실행 (DB에서는 일단 다 가져옵니다)
+        String statQuery = """
+            MATCH (n)-[r]-()
+            WHERE elementId(n) IN $nodeIds
+            RETURN 
+                elementId(n) as id, 
+                type(r) as relation,
+                CASE WHEN elementId(startNode(r)) = elementId(n) THEN 'TAIL' ELSE 'HEAD' END as position,
+                count(r) as count
+        """;
+
+        Collection<Map<String, Object>> statsResults = neo4jClient.query(statQuery)
+                .bindAll(Map.of("nodeIds", nodeIds))
+                .fetch()
+                .all();
+
+        // 3. 결과 매핑 (여기서 필터링 수행)
+        Map<String, List<Map<String, Object>>> statsMap = new HashMap<>();
+
+        for (Map<String, Object> row : statsResults) {
+            String id = String.valueOf(row.get("id"));
+            String relation = (String) row.get("relation");
+            String position = (String) row.get("position");
+            long count = ((Number) row.get("count")).longValue();
+
+            // [핵심 로직] 검색 조건에 사용된 관계라면 통계에서 제외 (Skip)
+            if (isUsedInSearchQuery(relation, position, cyphers)) {
+                continue;
+            }
+
+            statsMap.putIfAbsent(id, new ArrayList<>());
+
+            Map<String, Object> detailItem = new HashMap<>();
+            detailItem.put("relation", relation);
+            detailItem.put("position", position);
+            detailItem.put("count", count);
+
+            statsMap.get(id).add(detailItem);
+        }
+
+        // 4. 데이터 주입 (기존과 동일)
+        for (Map<String, Object> node : nodeList) {
+            String id = String.valueOf(node.get("id"));
+            List<Map<String, Object>> details = statsMap.getOrDefault(id, new ArrayList<>());
+
+            long totalConnectCount = details.stream()
+                    .mapToLong(d -> (long) d.get("count"))
+                    .sum();
+
+            node.put("details", details);
+            node.put("totalConnectCount", totalConnectCount);
+        }
+    }
+
+    private boolean isUsedInSearchQuery(String dbRelation, String dbPosition, List<CypherBlock> cyphers) {
+        if (cyphers == null || cyphers.isEmpty()) return false;
+
+        String safeDbRelation = (dbRelation == null) ? "" : dbRelation.trim();
+        String safeDbPosition = (dbPosition == null) ? "" : dbPosition.trim();
+
+        for (CypherBlock block : cyphers) {
+            if ("RELATIONSHIP".equals(block.getType())) {
+
+                String targetLabel = block.getLabel();
+                String targetDirection = block.getDirection();
+
+                if (targetLabel != null && targetLabel.trim().equalsIgnoreCase(safeDbRelation)) {
+
+                    if (targetDirection == null || "BOTH".equalsIgnoreCase(targetDirection.trim())) {
+                        return true;
+                    }
+
+                    String safeDirection = targetDirection.trim();
+
+                    if ("OUT".equalsIgnoreCase(safeDirection) && "TAIL".equalsIgnoreCase(safeDbPosition)) {
+                        return true;
+                    }
+
+                    if ("OUT".equalsIgnoreCase(safeDirection) && "HEAD".equalsIgnoreCase(safeDbPosition)) {
+                        return true;
+                    }
+
+                    if ("IN".equalsIgnoreCase(safeDirection) && "HEAD".equalsIgnoreCase(safeDbPosition)) {
+                        return true;
+                    }
+
+                    if ("IN".equalsIgnoreCase(safeDirection) && "TAIL".equalsIgnoreCase(safeDbPosition)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
 }

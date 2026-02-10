@@ -63,4 +63,18 @@ public class GraphCommonController {
         return ResponseEntity.ok(graphCommonService.findNodeAndNeighbors(elementId));
     }
 
+    @GetMapping("/node/{elementId}/neighbors/specific")
+    public ResponseEntity<GraphDetailDto> getSpecificNodeNeighbors(
+            @PathVariable String elementId,
+            @RequestParam(required = false) String relation,
+            @RequestParam(required = false) String direction
+    ) {
+        // direction 기본값 처리
+        String safeDirection = (direction == null || direction.isEmpty()) ? "ALL" : direction;
+
+        return ResponseEntity.ok(
+                graphCommonService.findSpecificNodeNeighbors(elementId, relation, safeDirection)
+        );
+    }
+
 }

@@ -47,4 +47,8 @@ public class GraphCommonService {
         return graphCommonRepository.findNodeAndNeighbors(elementId);
     }
 
+    public GraphDetailDto findSpecificNodeNeighbors(String elementId, String relation, String direction) {
+        return graphCommonRepository.findSpecificNodeNeighbors(elementId, relation, direction);
+    }
+
 }
