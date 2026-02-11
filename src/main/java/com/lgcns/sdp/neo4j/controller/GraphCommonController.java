@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -67,13 +68,35 @@ public class GraphCommonController {
     public ResponseEntity<GraphDetailDto> getSpecificNodeNeighbors(
             @PathVariable String elementId,
             @RequestParam(required = false) String relation,
-            @RequestParam(required = false) String direction
+            @RequestParam(required = false) String direction,
+            @RequestParam(required = false) String targetLabel
     ) {
-        // direction 기본값 처리
         String safeDirection = (direction == null || direction.isEmpty()) ? "ALL" : direction;
 
+        // Service 메서드 호출 시 targetLabel 추가 전달
         return ResponseEntity.ok(
-                graphCommonService.findSpecificNodeNeighbors(elementId, relation, safeDirection)
+                graphCommonService.findSpecificNodeNeighbors(elementId, relation, safeDirection, targetLabel)
+        );
+    }
+
+    @PostMapping("/node/{elementId}/neighbors/batch")
+    public ResponseEntity<GraphDetailDto> getSpecificNodeNeighborsBatch(
+            @PathVariable String elementId,
+            @RequestBody List<GraphExpansionCriteriaDto> criteriaList // [핵심] 리스트로 받음
+    ) {
+        return ResponseEntity.ok(
+                graphCommonService.findSpecificNodeNeighborsBatch(elementId, criteriaList)
+        );
+    }
+
+
+    @PostMapping("/node/{elementId}/expansion-stats") // GET -> POST로 변경 (List Body 전송 위해)
+    public ResponseEntity<GraphExpansionStatsDto> getNodeExpansionStats(
+            @PathVariable String elementId,
+            @RequestBody(required = false) List<String> excludeRelIds // 제외할 관계 ID 목록
+    ) {
+        return ResponseEntity.ok(
+                graphCommonService.getNodeExpansionStats(elementId, excludeRelIds)
         );
     }
 

@@ -1,10 +1,7 @@
 package com.lgcns.sdp.neo4j.repository;
 
 import com.lgcns.sdp.neo4j.constant.GraphQueryType;
-import com.lgcns.sdp.neo4j.dto.GraphDetailDto;
-import com.lgcns.sdp.neo4j.dto.GraphLabelCountDto;
-import com.lgcns.sdp.neo4j.dto.GraphSchemaDto;
-import com.lgcns.sdp.neo4j.dto.GraphSearchBarDto;
+import com.lgcns.sdp.neo4j.dto.*;
 import com.lgcns.sdp.neo4j.util.GraphUtil;
 import org.neo4j.driver.types.Entity;
 import org.neo4j.driver.types.Node;
@@ -16,6 +13,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Repository
 @RequiredArgsConstructor
@@ -133,39 +131,90 @@ public class GraphCommonRepository {
     }
 
     @Transactional(readOnly = true)
-    public GraphDetailDto findSpecificNodeNeighbors(String elementId, String relation, String direction) {
+    public GraphDetailDto findSpecificNodeNeighbors(String elementId, String relation, String direction, String targetLabel) {
 
-        // 1. 기본 매칭 (중심 노드)
         String matchClause = "MATCH (n) WHERE elementId(n) = $elementId ";
         String optionalMatch = "";
 
-        // 2. 관계 타입 처리 (relation이 있으면 [:TYPE] 추가)
+        // 1. 관계 타입 처리
         String relType = (relation != null && !relation.trim().isEmpty()) ? ":" + relation : "";
 
-        // 3. 방향(Direction)에 따른 Cypher 패턴 조립
+        // 2. 타겟 라벨 처리 (추가됨)
+        // connectedNode에 라벨 조건을 붙임 ex: (connectedNode:Person)
+        String targetNodeStr = "(connectedNode";
+        if (targetLabel != null && !targetLabel.trim().isEmpty()) {
+            targetNodeStr += ":" + targetLabel;
+        }
+        targetNodeStr += ")";
+
+        // 3. 방향 및 패턴 조립
         if ("OUT".equalsIgnoreCase(direction)) {
-            // (n)-[r]->(connectedNode)
-            optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]->(connectedNode)", relType);
+            // (n)-[r]->(connectedNode:Label)
+            optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]->%s", relType, targetNodeStr);
         } else if ("IN".equalsIgnoreCase(direction)) {
-            // (n)<-[r]-(connectedNode)
-            optionalMatch = String.format("OPTIONAL MATCH (n)<-[r%s]-(connectedNode)", relType);
+            // (n)<-[r]-(connectedNode:Label)
+            optionalMatch = String.format("OPTIONAL MATCH (n)<-[r%s]-%s", relType, targetNodeStr);
         } else {
-            // ALL: (n)-[r]-(connectedNode)
-            optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]-(connectedNode)", relType);
+            // (n)-[r]-(connectedNode:Label)
+            optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]-%s", relType, targetNodeStr);
         }
 
-        // 4. 최종 쿼리 완성
         String query = matchClause + "\n" + optionalMatch + "\n RETURN n, r, connectedNode";
 
-        // 5. 실행
         Collection<Map<String, Object>> result = neo4jClient.query(query)
                 .bind(elementId).to("elementId")
                 .fetch()
                 .all();
 
-        // 6. 기존 변환 메서드 재사용 (리턴 타입 맞추기 위함)
         return convertToGraphDetailDto(result);
     }
+
+    @Transactional(readOnly = true)
+    public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList) {
+
+        // 1. 쿼리 작성: 모든 이웃을 찾은 뒤, 조건 리스트 중 '하나라도' 만족하는지 확인 (WHERE any(...))
+        String query = """
+            MATCH (n) WHERE elementId(n) = $elementId
+            MATCH (n)-[r]-(connectedNode)
+            
+            // [핵심 로직] criteriaList 중 하나라도 조건에 맞으면 통과 (OR 로직과 유사)
+            WHERE any(c IN $criteriaList WHERE 
+                // 1. 관계 타입 체크 (null이거나 같거나)
+                (c.relation IS NULL OR type(r) = c.relation)
+                AND
+                // 2. 타겟 라벨 체크 (null이거나 라벨을 포함하거나)
+                (c.targetLabel IS NULL OR c.targetLabel IN labels(connectedNode))
+                AND
+                // 3. 방향 체크
+                (
+                    c.direction = 'ALL' OR c.direction IS NULL OR
+                    (c.direction = 'OUT' AND startNode(r) = n) OR
+                    (c.direction = 'IN' AND endNode(r) = n)
+                )
+            )
+            
+            RETURN n, r, connectedNode
+            """;
+
+        // 파라미터 매핑을 위해 DTO 리스트를 Map 리스트로 변환 필요 (혹은 Object mapper 사용)
+        // 여기서는 Neo4jClient가 자동으로 매핑해주길 기대하거나, 수동 변환
+        List<Map<String, Object>> mappedCriteria = criteriaList.stream().map(c -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("relation", c.getRelation());
+            map.put("targetLabel", c.getTargetLabel());
+            map.put("direction", (c.getDirection() == null || c.getDirection().isEmpty()) ? "ALL" : c.getDirection());
+            return map;
+        }).collect(Collectors.toList());
+
+        Collection<Map<String, Object>> result = neo4jClient.query(query)
+                .bind(elementId).to("elementId")
+                .bind(mappedCriteria).to("criteriaList") // 리스트 바인딩
+                .fetch()
+                .all();
+
+        return convertToGraphDetailDto(result); // 기존 변환 로직 재사용
+    }
+
 
     // [변환 헬퍼 메서드] Raw 데이터를 GraphDetailDto로 변환
     private GraphDetailDto convertToGraphDetailDto(Collection<Map<String, Object>> result) {
@@ -336,6 +385,125 @@ public class GraphCommonRepository {
         return neo4jClient.query(cypherQuery)
                 .fetch()
                 .all();
+    }
+
+    @Transactional(readOnly = true)
+    public GraphExpansionStatsDto getNodeExpansionStats(String elementId, List<String> excludeRelIds) {
+
+        // 제외할 ID가 없으면 빈 리스트 처리
+        List<String> excludes = (excludeRelIds == null) ? Collections.emptyList() : excludeRelIds;
+
+        String query = """
+            MATCH (n) WHERE elementId(n) = $elementId
+            MATCH (n)-[r]-(m)
+            // [핵심] 이미 화면에 있는 관계(ID)는 제외
+            WHERE NOT elementId(r) IN $excludeIds
+            
+            WITH 
+                type(r) as relType, 
+                labels(m) as targetLabels, 
+                startNode(r) = n as isOutgoing, 
+                count(m) as cnt
+            RETURN 
+                relType, 
+                targetLabels, 
+                CASE WHEN isOutgoing THEN 'OUT' ELSE 'IN' END as direction, 
+                cnt
+            """;
+
+        Collection<Map<String, Object>> result = neo4jClient.query(query)
+                .bind(elementId).to("elementId")
+                .bind(excludes).to("excludeIds") // 파라미터 바인딩
+                .fetch()
+                .all();
+
+        return convertToExpansionStatsDto(result); // 기존 변환 로직 그대로 사용
+    }
+
+    private GraphExpansionStatsDto convertToExpansionStatsDto(Collection<Map<String, Object>> result) {
+        // 1. 집계용 Map 생성 (Key -> Dto)
+        Map<String, GraphExpansionStatsDto.ExpansionItemDto> relMap = new HashMap<>();
+        Map<String, GraphExpansionStatsDto.ExpansionItemDto> catMap = new HashMap<>();
+        Map<String, GraphExpansionStatsDto.ExpansionItemDto> pairMap = new HashMap<>();
+
+        for (Map<String, Object> row : result) {
+            String relType = (String) row.get("relType");
+            List<String> labels = (List<String>) row.get("targetLabels");
+            String targetLabel = labels.isEmpty() ? "Unknown" : labels.get(0);
+            String direction = (String) row.get("direction");
+            long count = ((Number) row.get("cnt")).longValue();
+
+            // ---------------------------------------------------------
+            // (1) Relationships 집계: [관계명 + 방향]이 같으면 합침
+            // ---------------------------------------------------------
+            String relKey = relType + "|" + direction;
+            relMap.compute(relKey, (k, v) -> {
+                if (v == null) {
+                    return GraphExpansionStatsDto.ExpansionItemDto.builder()
+                            .id("rel-" + k) // 임시 ID
+                            .label(relType)
+                            .direction(direction)
+                            .count(count)
+                            .build();
+                } else {
+                    v.setCount(v.getCount() + count); // 카운트 누적
+                    return v;
+                }
+            });
+
+            // ---------------------------------------------------------
+            // (2) Categories 집계: [타겟라벨]이 같으면 합침 (방향/관계 무시)
+            // ---------------------------------------------------------
+            String catKey = targetLabel;
+            catMap.compute(catKey, (k, v) -> {
+                if (v == null) {
+                    return GraphExpansionStatsDto.ExpansionItemDto.builder()
+                            .id("cat-" + k)
+                            .label(targetLabel)
+                            .count(count)
+                            .build();
+                } else {
+                    v.setCount(v.getCount() + count);
+                    return v;
+                }
+            });
+
+            // ---------------------------------------------------------
+            // (3) Pairs 집계: [관계명 + 방향 + 타겟라벨]이 같으면 합침
+            //     (쿼리에서 이미 그룹핑되지만 안전하게 한 번 더)
+            // ---------------------------------------------------------
+            String pairKey = relType + "|" + direction + "|" + targetLabel;
+            pairMap.compute(pairKey, (k, v) -> {
+                if (v == null) {
+                    return GraphExpansionStatsDto.ExpansionItemDto.builder()
+                            .id("pair-" + k)
+                            .label(relType)
+                            .targetLabel(targetLabel)
+                            .direction(direction)
+                            .count(count)
+                            .build();
+                } else {
+                    v.setCount(v.getCount() + count);
+                    return v;
+                }
+            });
+        }
+
+        // Map -> List 변환 및 ID 재할당 (깔끔하게 index로)
+        List<GraphExpansionStatsDto.ExpansionItemDto> rels = new ArrayList<>(relMap.values());
+        List<GraphExpansionStatsDto.ExpansionItemDto> cats = new ArrayList<>(catMap.values());
+        List<GraphExpansionStatsDto.ExpansionItemDto> pairs = new ArrayList<>(pairMap.values());
+
+        // ID 예쁘게 다시 매기기 (선택사항)
+        for (int i = 0; i < rels.size(); i++) rels.get(i).setId("rel-" + i);
+        for (int i = 0; i < cats.size(); i++) cats.get(i).setId("cat-" + i);
+        for (int i = 0; i < pairs.size(); i++) pairs.get(i).setId("pair-" + i);
+
+        return GraphExpansionStatsDto.builder()
+                .relationships(rels)
+                .categories(cats)
+                .pairs(pairs)
+                .build();
     }
 
 }

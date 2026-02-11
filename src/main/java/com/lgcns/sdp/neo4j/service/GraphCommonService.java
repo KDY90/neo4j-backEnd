@@ -1,15 +1,13 @@
 package com.lgcns.sdp.neo4j.service;
 
-import com.lgcns.sdp.neo4j.dto.GraphDetailDto;
-import com.lgcns.sdp.neo4j.dto.GraphLabelCountDto;
-import com.lgcns.sdp.neo4j.dto.GraphSchemaDto;
-import com.lgcns.sdp.neo4j.dto.GraphSearchBarDto;
+import com.lgcns.sdp.neo4j.dto.*;
 import com.lgcns.sdp.neo4j.repository.GraphCommonRepository;
 import com.lgcns.sdp.neo4j.repository.GraphStyleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -47,8 +45,18 @@ public class GraphCommonService {
         return graphCommonRepository.findNodeAndNeighbors(elementId);
     }
 
-    public GraphDetailDto findSpecificNodeNeighbors(String elementId, String relation, String direction) {
-        return graphCommonRepository.findSpecificNodeNeighbors(elementId, relation, direction);
+    public GraphDetailDto findSpecificNodeNeighbors(String elementId, String relation, String direction, String targetLabel) {
+        return graphCommonRepository.findSpecificNodeNeighbors(elementId, relation, direction,targetLabel);
+    }
+
+    public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList) {
+        return graphCommonRepository.findSpecificNodeNeighborsBatch(elementId, criteriaList);
+    }
+
+
+
+    public GraphExpansionStatsDto getNodeExpansionStats(String elementId , List<String> excludeRelIds) {
+        return graphCommonRepository.getNodeExpansionStats(elementId ,excludeRelIds);
     }
 
 }

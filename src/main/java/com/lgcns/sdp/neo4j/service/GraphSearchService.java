@@ -420,10 +420,6 @@ public class GraphSearchService {
             String position = (String) row.get("position");
             long count = ((Number) row.get("count")).longValue();
 
-            // [핵심 로직] 검색 조건에 사용된 관계라면 통계에서 제외 (Skip)
-            if (isUsedInSearchQuery(relation, position, cyphers)) {
-                continue;
-            }
 
             statsMap.putIfAbsent(id, new ArrayList<>());
 
@@ -447,47 +443,6 @@ public class GraphSearchService {
             node.put("details", details);
             node.put("totalConnectCount", totalConnectCount);
         }
-    }
-
-    private boolean isUsedInSearchQuery(String dbRelation, String dbPosition, List<CypherBlock> cyphers) {
-        if (cyphers == null || cyphers.isEmpty()) return false;
-
-        String safeDbRelation = (dbRelation == null) ? "" : dbRelation.trim();
-        String safeDbPosition = (dbPosition == null) ? "" : dbPosition.trim();
-
-        for (CypherBlock block : cyphers) {
-            if ("RELATIONSHIP".equals(block.getType())) {
-
-                String targetLabel = block.getLabel();
-                String targetDirection = block.getDirection();
-
-                if (targetLabel != null && targetLabel.trim().equalsIgnoreCase(safeDbRelation)) {
-
-                    if (targetDirection == null || "BOTH".equalsIgnoreCase(targetDirection.trim())) {
-                        return true;
-                    }
-
-                    String safeDirection = targetDirection.trim();
-
-                    if ("OUT".equalsIgnoreCase(safeDirection) && "TAIL".equalsIgnoreCase(safeDbPosition)) {
-                        return true;
-                    }
-
-                    if ("OUT".equalsIgnoreCase(safeDirection) && "HEAD".equalsIgnoreCase(safeDbPosition)) {
-                        return true;
-                    }
-
-                    if ("IN".equalsIgnoreCase(safeDirection) && "HEAD".equalsIgnoreCase(safeDbPosition)) {
-                        return true;
-                    }
-
-                    if ("IN".equalsIgnoreCase(safeDirection) && "TAIL".equalsIgnoreCase(safeDbPosition)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
     }
 
 }
