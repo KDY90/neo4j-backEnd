@@ -49,8 +49,8 @@ public class GraphCommonService {
         return graphCommonRepository.findSpecificNodeNeighbors(elementId, relation, direction,targetLabel);
     }
 
-    public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList) {
-        return graphCommonRepository.findSpecificNodeNeighborsBatch(elementId, criteriaList);
+    public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList, Integer limit) {
+        return graphCommonRepository.findSpecificNodeNeighborsBatch(elementId, criteriaList, limit);
     }
 
 

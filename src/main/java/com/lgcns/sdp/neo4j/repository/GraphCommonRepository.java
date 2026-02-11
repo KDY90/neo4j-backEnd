@@ -170,49 +170,116 @@ public class GraphCommonRepository {
     }
 
     @Transactional(readOnly = true)
-    public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList) {
+    public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList, Integer limit) {
 
-        // 1. 쿼리 작성: 모든 이웃을 찾은 뒤, 조건 리스트 중 '하나라도' 만족하는지 확인 (WHERE any(...))
-        String query = """
-            MATCH (n) WHERE elementId(n) = $elementId
-            MATCH (n)-[r]-(connectedNode)
-            
-            // [핵심 로직] criteriaList 중 하나라도 조건에 맞으면 통과 (OR 로직과 유사)
-            WHERE any(c IN $criteriaList WHERE 
-                // 1. 관계 타입 체크 (null이거나 같거나)
-                (c.relation IS NULL OR type(r) = c.relation)
-                AND
-                // 2. 타겟 라벨 체크 (null이거나 라벨을 포함하거나)
-                (c.targetLabel IS NULL OR c.targetLabel IN labels(connectedNode))
-                AND
-                // 3. 방향 체크
-                (
-                    c.direction = 'ALL' OR c.direction IS NULL OR
-                    (c.direction = 'OUT' AND startNode(r) = n) OR
-                    (c.direction = 'IN' AND endNode(r) = n)
-                )
+        // 1. 기본 쿼리 (LIMIT 절 제외)
+        String baseQuery = """
+        MATCH (n) WHERE elementId(n) = $elementId
+        MATCH (n)-[r]-(connectedNode)
+        
+        WHERE any(c IN $criteriaList WHERE
+            (c.relation IS NULL OR type(r) = c.relation)
+            AND
+            (c.targetLabel IS NULL OR c.targetLabel IN labels(connectedNode))
+            AND
+            (
+                c.direction = 'ALL' OR c.direction IS NULL OR
+                (c.direction = 'OUT' AND startNode(r) = n) OR
+                (c.direction = 'IN' AND endNode(r) = n)
             )
-            
-            RETURN n, r, connectedNode
-            """;
+        )
+        
+        RETURN n, r, connectedNode
+        """;
 
-        // 파라미터 매핑을 위해 DTO 리스트를 Map 리스트로 변환 필요 (혹은 Object mapper 사용)
-        // 여기서는 Neo4jClient가 자동으로 매핑해주길 기대하거나, 수동 변환
+        String finalQuery = baseQuery;
+        if (limit != null && limit > 0) {
+            finalQuery += " LIMIT $limit";
+        }
+
         List<Map<String, Object>> mappedCriteria = criteriaList.stream().map(c -> {
             Map<String, Object> map = new HashMap<>();
             map.put("relation", c.getRelation());
             map.put("targetLabel", c.getTargetLabel());
             map.put("direction", (c.getDirection() == null || c.getDirection().isEmpty()) ? "ALL" : c.getDirection());
             return map;
-        }).collect(Collectors.toList());
+        }).toList();
 
-        Collection<Map<String, Object>> result = neo4jClient.query(query)
+        var runner = neo4jClient.query(finalQuery)
                 .bind(elementId).to("elementId")
-                .bind(mappedCriteria).to("criteriaList") // 리스트 바인딩
+                .bind(mappedCriteria).to("criteriaList");
+
+        if (limit != null && limit > 0) {
+            runner = runner.bind(limit).to("limit");
+        }
+
+        Collection<Map<String, Object>> result = runner.fetch().all();
+
+        // 1. 기본 DTO 변환 (nodes, relationships 생성)
+        GraphDetailDto dto = convertToGraphDetailDto(result);
+
+        // [★ 추가됨] 2. 통계 정보(details) 주입
+        // DTO에 담긴 노드 리스트를 꺼내서 통계 정보를 채워넣습니다.
+        enrichWithGlobalConnectivity(dto.getNodes());
+
+        return dto;
+    }
+
+    private void enrichWithGlobalConnectivity(List<Map<String, Object>> nodeList) {
+        if (nodeList == null || nodeList.isEmpty()) return;
+
+        // 1. 노드 ID 목록 추출
+        List<String> nodeIds = nodeList.stream()
+                .map(n -> String.valueOf(n.get("id")))
+                .toList();
+
+        // 2. 통계 쿼리 실행
+        String statQuery = """
+            MATCH (n)-[r]-()
+            WHERE elementId(n) IN $nodeIds
+            RETURN 
+                elementId(n) as id, 
+                type(r) as relation,
+                CASE WHEN elementId(startNode(r)) = elementId(n) THEN 'TAIL' ELSE 'HEAD' END as position,
+                count(r) as count
+        """;
+
+        Collection<Map<String, Object>> statsResults = neo4jClient.query(statQuery)
+                .bindAll(Map.of("nodeIds", nodeIds))
                 .fetch()
                 .all();
 
-        return convertToGraphDetailDto(result); // 기존 변환 로직 재사용
+        // 3. 결과 매핑
+        Map<String, List<Map<String, Object>>> statsMap = new HashMap<>();
+
+        for (Map<String, Object> row : statsResults) {
+            String id = String.valueOf(row.get("id"));
+            String relation = (String) row.get("relation");
+            String position = (String) row.get("position");
+            long count = ((Number) row.get("count")).longValue();
+
+            statsMap.putIfAbsent(id, new ArrayList<>());
+
+            Map<String, Object> detailItem = new HashMap<>();
+            detailItem.put("relation", relation);
+            detailItem.put("position", position);
+            detailItem.put("count", count);
+
+            statsMap.get(id).add(detailItem);
+        }
+
+        // 4. 데이터 주입
+        for (Map<String, Object> node : nodeList) {
+            String id = String.valueOf(node.get("id"));
+            List<Map<String, Object>> details = statsMap.getOrDefault(id, new ArrayList<>());
+
+            long totalConnectCount = details.stream()
+                    .mapToLong(d -> (long) d.get("count"))
+                    .sum();
+
+            node.put("details", details);
+            node.put("totalConnectCount", totalConnectCount);
+        }
     }
 
 

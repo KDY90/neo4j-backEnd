@@ -82,10 +82,11 @@ public class GraphCommonController {
     @PostMapping("/node/{elementId}/neighbors/batch")
     public ResponseEntity<GraphDetailDto> getSpecificNodeNeighborsBatch(
             @PathVariable String elementId,
-            @RequestBody List<GraphExpansionCriteriaDto> criteriaList // [핵심] 리스트로 받음
+            @RequestParam(required = false) Integer limit,
+            @RequestBody List<GraphExpansionCriteriaDto> criteriaList
     ) {
         return ResponseEntity.ok(
-                graphCommonService.findSpecificNodeNeighborsBatch(elementId, criteriaList)
+                graphCommonService.findSpecificNodeNeighborsBatch(elementId, criteriaList, limit)
         );
     }
 
