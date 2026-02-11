@@ -359,7 +359,6 @@ public class GraphCommonRepository {
             if (n.labels().iterator().hasNext()) {
                 label = n.labels().iterator().next();
             }
-            map.put("type", label);
 
             // [추가] 스타일 조회 및 적용
             // 라벨을 기준으로 스타일을 가져와서 'style' 키에 저장

@@ -27,4 +27,17 @@ public class GenericNodeController {
         GraphCreateNodeResponseDto response = genericNodeService.createNode(requestDto);
         return ResponseEntity.ok(response);
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<GraphCreateNodeResponseDto> updateNode(@PathVariable String id,
+            @RequestBody Map<String, Object> properties) {
+        GraphCreateNodeResponseDto response = genericNodeService.updateNode(id, properties);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteNode(@PathVariable String id) {
+        genericNodeService.deleteNode(id);
+        return ResponseEntity.noContent().build();
+    }
 }

@@ -48,8 +48,7 @@ public class GenericNodeService {
                     Map<String, Object> styleConfig = graphUtil.getStyleConfig(
                             nodeLabel,
                             "NODE",
-                            new HashMap<>()
-                    );
+                            new HashMap<>());
 
                     // 3-3. DTO 빌드 (style 포함)
                     return GraphCreateNodeResponseDto.builder()
@@ -61,5 +60,44 @@ public class GenericNodeService {
                 })
                 .one()
                 .orElseThrow(() -> new RuntimeException("Failed to create node"));
+    }
+
+    public GraphCreateNodeResponseDto updateNode(String elementId, Map<String, Object> properties) {
+        // Remove "labels" from properties if it exists, as it's metadata
+        if (properties.containsKey("labels")) {
+            properties.remove("labels");
+        }
+
+        String query = "MATCH (n) WHERE elementId(n) = $elementId SET n += $props RETURN n";
+
+        return neo4jClient.query(query)
+                .bind(elementId).to("elementId")
+                .bind(properties).to("props")
+                .fetchAs(GraphCreateNodeResponseDto.class)
+                .mappedBy((typeSystem, record) -> {
+                    Node node = record.get("n").asNode();
+                    String nodeLabel = node.labels().iterator().next();
+
+                    Map<String, Object> styleConfig = graphUtil.getStyleConfig(
+                            nodeLabel,
+                            "NODE",
+                            new HashMap<>());
+
+                    return GraphCreateNodeResponseDto.builder()
+                            .elementId(node.elementId())
+                            .label(nodeLabel)
+                            .properties(node.asMap())
+                            .style(styleConfig)
+                            .build();
+                })
+                .one()
+                .orElseThrow(() -> new RuntimeException("Failed to update node with id: " + elementId));
+    }
+
+    public void deleteNode(String elementId) {
+        String query = "MATCH (n) WHERE elementId(n) = $elementId DETACH DELETE n";
+        neo4jClient.query(query)
+                .bind(elementId).to("elementId")
+                .run();
     }
 }
