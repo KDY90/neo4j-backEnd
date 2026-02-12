@@ -10,4 +10,7 @@ import java.util.Optional;
 public interface GraphSceneRepository extends JpaRepository<GraphScene, Long>{
 
     Optional<GraphScene> findBySceneName(String sceneName);
+
+    Optional<GraphScene> findTopByOrderByIdDesc();
+
 }

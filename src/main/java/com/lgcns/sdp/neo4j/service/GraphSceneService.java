@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -33,11 +34,15 @@ public class GraphSceneService {
 
     @Transactional
     public GraphSceneDto createScene(GraphSceneDto dto) {
+
+        long totalCount = graphSceneRepository.count();
+
         GraphScene entity = GraphScene.builder()
-                .sceneName(dto.getSceneName())
-                .sceneQuery(dto.getSceneQuery())
-                .nodeCount(dto.getNodeCount())
-                .relCount(dto.getRelCount())
+                .sceneName("Untitled Scene" + totalCount + 1)
+                .sceneQuery("")
+                .nodeCount(0)
+                .relCount(0)
+                .sceneConfig(new HashMap<>())
                 .build();
 
         GraphScene savedEntity = graphSceneRepository.save(entity);
