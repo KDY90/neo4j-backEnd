@@ -4,9 +4,12 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.Comment;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Entity
 @Table(name = "tb_graph_scene", schema = "vcisodb")
@@ -41,6 +44,11 @@ public class GraphScene {
     @Column(name = "rel_count", nullable = false, columnDefinition = "INT DEFAULT 0")
     @Builder.Default
     private Integer relCount = 0;
+
+    @Comment("scene 설정 JSON")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "scene_config", nullable = false, columnDefinition = "longtext")
+    private Map<String, Object> sceneConfig;
 
     @Comment("생성일시")
     @CreationTimestamp

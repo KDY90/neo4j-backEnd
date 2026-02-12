@@ -37,6 +37,10 @@ public class GraphCypherQuery {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
+    @Comment("쿼리 타입")
+    @Column(name = "query_type", nullable = false)
+    private String queryType;
+
     @Comment("생성일시")
     @CreationTimestamp
     @Column(name = "create_timestamp", updatable = false)
