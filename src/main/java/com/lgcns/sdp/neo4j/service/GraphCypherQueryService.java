@@ -20,14 +20,28 @@ public class GraphCypherQueryService {
     private final GraphCypherQueryRepository graphCypherQueryRepository;
     private final com.lgcns.sdp.neo4j.repository.GraphCommonRepository graphCommonRepository;
 
-    public List<GraphCypherQueryDto> getAllQueries() {
-        return graphCypherQueryRepository.findAll().stream()
+    public List<GraphCypherQueryDto> getAllQueries(String queryType) {
+        List<GraphCypherQuery> queries;
+        if (queryType != null && !queryType.isEmpty()) {
+            queries = graphCypherQueryRepository.findByQueryType(queryType);
+        } else {
+            queries = graphCypherQueryRepository.findAll();
+        }
+
+        return queries.stream()
                 .map(GraphCypherQueryDto::from)
                 .collect(Collectors.toList());
     }
 
-    public List<GraphCypherQueryDto> getValidQueries() {
-        return graphCypherQueryRepository.findAll().stream()
+    public List<GraphCypherQueryDto> getValidQueries(String queryType) {
+        List<GraphCypherQuery> queries;
+        if (queryType != null && !queryType.isEmpty()) {
+            queries = graphCypherQueryRepository.findByQueryType(queryType);
+        } else {
+            queries = graphCypherQueryRepository.findAll();
+        }
+
+        return queries.stream()
                 .filter(entity -> {
                     java.util.Map<String, Object> validationResult = graphCommonRepository
                             .validateCypher(entity.getCypherQuery());
@@ -49,6 +63,7 @@ public class GraphCypherQueryService {
                 .title(dto.getTitle())
                 .cypherQuery(dto.getCypherQuery())
                 .description(dto.getDescription())
+                .queryType(dto.getQueryType())
                 .build();
 
         GraphCypherQuery savedEntity = graphCypherQueryRepository.save(entity);
@@ -60,7 +75,7 @@ public class GraphCypherQueryService {
         GraphCypherQuery entity = graphCypherQueryRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("GraphCypherQuery not found with id: " + id));
 
-        entity.update(dto.getTitle(), dto.getCypherQuery(), dto.getDescription());
+        entity.update(dto.getTitle(), dto.getCypherQuery(), dto.getDescription(), dto.getQueryType());
 
         return GraphCypherQueryDto.from(entity);
     }

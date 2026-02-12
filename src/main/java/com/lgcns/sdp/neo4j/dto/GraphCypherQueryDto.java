@@ -13,6 +13,7 @@ public class GraphCypherQueryDto {
     private String title;
     private String cypherQuery;
     private String description;
+    private String queryType;
     private LocalDateTime createTimestamp;
     private LocalDateTime updateTimestamp;
 
@@ -22,6 +23,7 @@ public class GraphCypherQueryDto {
                 .title(entity.getTitle())
                 .cypherQuery(entity.getCypherQuery())
                 .description(entity.getDescription())
+                .queryType(entity.getQueryType())
                 .createTimestamp(entity.getCreateTimestamp())
                 .updateTimestamp(entity.getUpdateTimestamp())
                 .build();

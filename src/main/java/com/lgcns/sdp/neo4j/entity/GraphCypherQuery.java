@@ -51,9 +51,10 @@ public class GraphCypherQuery {
     @Column(name = "update_timestamp")
     private LocalDateTime updateTimestamp;
 
-    public void update(String title, String cypherQuery, String description) {
+    public void update(String title, String cypherQuery, String description, String queryType) {
         this.title = title;
         this.cypherQuery = cypherQuery;
         this.description = description;
+        this.queryType = queryType;
     }
 }

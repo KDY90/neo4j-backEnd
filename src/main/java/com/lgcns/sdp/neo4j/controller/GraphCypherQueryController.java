@@ -16,13 +16,15 @@ public class GraphCypherQueryController {
     private final GraphCypherQueryService graphCypherQueryService;
 
     @GetMapping
-    public ResponseEntity<List<GraphCypherQueryDto>> getAllQueries() {
-        return ResponseEntity.ok(graphCypherQueryService.getAllQueries());
+    public ResponseEntity<List<GraphCypherQueryDto>> getAllQueries(
+            @RequestParam(required = false) String queryType) {
+        return ResponseEntity.ok(graphCypherQueryService.getAllQueries(queryType));
     }
 
     @GetMapping("/valid")
-    public ResponseEntity<List<GraphCypherQueryDto>> getValidQueries() {
-        return ResponseEntity.ok(graphCypherQueryService.getValidQueries());
+    public ResponseEntity<List<GraphCypherQueryDto>> getValidQueries(
+            @RequestParam(required = false) String queryType) {
+        return ResponseEntity.ok(graphCypherQueryService.getValidQueries(queryType));
     }
 
     @GetMapping("/{id}")

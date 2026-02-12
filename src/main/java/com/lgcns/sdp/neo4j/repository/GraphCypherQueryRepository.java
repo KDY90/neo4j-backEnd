@@ -10,4 +10,6 @@ import java.util.List;
 public interface GraphCypherQueryRepository extends JpaRepository<GraphCypherQuery, Long> {
 
     List<GraphCypherQuery> findByTitleContaining(String keyword);
+
+    List<GraphCypherQuery> findByQueryType(String queryType);
 }
