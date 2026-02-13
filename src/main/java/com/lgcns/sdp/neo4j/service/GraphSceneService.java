@@ -21,7 +21,7 @@ public class GraphSceneService {
     private final GraphSceneRepository graphSceneRepository;
 
     public List<GraphSceneDto> getAllScenes() {
-        return graphSceneRepository.findAll().stream()
+        return graphSceneRepository.findAllByOrderByIdDesc().stream()
                 .map(GraphSceneDto::fromEntity)
                 .collect(Collectors.toList());
     }
@@ -38,7 +38,7 @@ public class GraphSceneService {
         long totalCount = graphSceneRepository.count();
 
         GraphScene entity = GraphScene.builder()
-                .sceneName("Untitled Scene" + totalCount + 1)
+                .sceneName("Untitled Scene" + totalCount)
                 .sceneQuery("")
                 .nodeCount(0)
                 .relCount(0)
@@ -54,7 +54,13 @@ public class GraphSceneService {
         GraphScene entity = graphSceneRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("GraphScene not found with id: " + id));
 
-        entity.update(dto.getSceneName(), dto.getSceneQuery(), dto.getNodeCount(), dto.getRelCount());
+        entity.update(
+                dto.getSceneName(),
+                dto.getSceneQuery(),
+                dto.getNodeCount(),
+                dto.getRelCount(),
+                dto.getSceneConfig()
+        );
 
         return GraphSceneDto.fromEntity(entity);
     }
