@@ -23,7 +23,7 @@ public class GraphSceneDto {
     private LocalDateTime createTimestamp;
     private LocalDateTime updateTimestamp;
 
-    // Entity -> DTO 변환
+     
     public static GraphSceneDto fromEntity(GraphScene entity) {
         return GraphSceneDto.builder()
                 .id(entity.getId())
@@ -37,7 +37,7 @@ public class GraphSceneDto {
                 .build();
     }
 
-    // DTO -> Entity 변환
+     
     public GraphScene toEntity() {
         return GraphScene.builder()
                 .id(this.id)

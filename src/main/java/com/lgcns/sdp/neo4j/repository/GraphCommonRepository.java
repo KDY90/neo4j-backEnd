@@ -25,7 +25,7 @@ public class GraphCommonRepository {
 
     @Transactional(readOnly = true)
     public Collection<GraphSchemaDto> findSchemaInfo() {
-        return neo4jClient.query(GraphQueryType.SCHEMA_INFO.getQuery()) // Enum 호출
+        return neo4jClient.query(GraphQueryType.SCHEMA_INFO.getQuery())  
                 .fetchAs(GraphSchemaDto.class).mappedBy((typeSystem, record) ->
 
                 {
@@ -42,7 +42,7 @@ public class GraphCommonRepository {
 
     @Transactional(readOnly = true)
     public Collection<GraphLabelCountDto> getLabelCounts() {
-        return neo4jClient.query(GraphQueryType.LABEL_COUNTS.getQuery()) // Enum 호출
+        return neo4jClient.query(GraphQueryType.LABEL_COUNTS.getQuery())  
                 .fetchAs(GraphLabelCountDto.class)
                 .mappedBy((typeSystem, record) -> new GraphLabelCountDto(
                         record.get("label").asString(),
@@ -56,12 +56,12 @@ public class GraphCommonRepository {
                 .fetchAs(GraphSearchBarDto.class)
                 .mappedBy((typeSystem, record) -> {
 
-                    // [1] 스타일 조회를 위한 로컬 캐시 생성 (요청 1번당 1개)
+                     
                     Map<String, Map<String, Object>> styleCache = new HashMap<>();
 
                     Value schema = record.get("schema");
 
-                    // --- 1. 노드 처리 ---
+                     
                     List<Value> nodesList = schema.get("nodes").asList(v -> v);
                     List<GraphSearchBarDto.NodeSchema> nodeSchemas = nodesList.stream()
                             .map(nodeVal -> {
@@ -75,14 +75,14 @@ public class GraphCommonRepository {
                                                 p.get("type").asString()))
                                         .toList();
 
-                                // [2] 노드 스타일 조회 (캐시 사용)
+                                 
                                 Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
 
-                                // 생성자에 style Map 전달 -> DTO 내부 @JsonAnyGetter가 처리
+                                 
                                 return new GraphSearchBarDto.NodeSchema(label, propertySchemas, style);
                             }).toList();
 
-                    // --- 2. 관계(Relationship) 처리 ---
+                     
                     List<Value> relsList = schema.get("relationships").asList(v -> v);
                     List<GraphSearchBarDto.RelationshipSchema> relSchemas = relsList.stream()
                             .map(relVal -> {
@@ -95,11 +95,11 @@ public class GraphCommonRepository {
                                                 conn.get("tail").asString()))
                                         .toList();
 
-                                // [3] 관계 스타일 조회 (캐시 사용)
+                                 
                                 Map<String, Object> style = graphUtil.getStyleConfig(relationshipName, "RELATIONSHIP",
                                         styleCache);
 
-                                // 생성자에 style Map 전달
+                                 
                                 return new GraphSearchBarDto.RelationshipSchema(relationshipName, connections, style);
                             })
                             .toList();
@@ -110,10 +110,10 @@ public class GraphCommonRepository {
                 .orElse(new GraphSearchBarDto(Collections.emptyList(), Collections.emptyList()));
     }
 
-    // (참고) 결과를 Nodes와 Relationships 리스트로 분리하는 헬퍼 메서드
+     
     @Transactional(readOnly = true)
     public GraphDetailDto findNodeAndNeighbors(String elementId) {
-        // [쿼리] 시스템 ID(elementId)로 특정 노드와 그 이웃들을 조회
+         
         String query = """
                 MATCH (n)
                 WHERE elementId(n) = $elementId
@@ -126,7 +126,7 @@ public class GraphCommonRepository {
                 .fetch()
                 .all();
 
-        // 변환 메서드 호출
+         
         return convertToGraphDetailDto(result);
     }
 
@@ -136,26 +136,26 @@ public class GraphCommonRepository {
         String matchClause = "MATCH (n) WHERE elementId(n) = $elementId ";
         String optionalMatch = "";
 
-        // 1. 관계 타입 처리
+         
         String relType = (relation != null && !relation.trim().isEmpty()) ? ":" + relation : "";
 
-        // 2. 타겟 라벨 처리 (추가됨)
-        // connectedNode에 라벨 조건을 붙임 ex: (connectedNode:Person)
+         
+         
         String targetNodeStr = "(connectedNode";
         if (targetLabel != null && !targetLabel.trim().isEmpty()) {
             targetNodeStr += ":" + targetLabel;
         }
         targetNodeStr += ")";
 
-        // 3. 방향 및 패턴 조립
+         
         if ("OUT".equalsIgnoreCase(direction)) {
-            // (n)-[r]->(connectedNode:Label)
+             
             optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]->%s", relType, targetNodeStr);
         } else if ("IN".equalsIgnoreCase(direction)) {
-            // (n)<-[r]-(connectedNode:Label)
+             
             optionalMatch = String.format("OPTIONAL MATCH (n)<-[r%s]-%s", relType, targetNodeStr);
         } else {
-            // (n)-[r]-(connectedNode:Label)
+             
             optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]-%s", relType, targetNodeStr);
         }
 
@@ -172,7 +172,7 @@ public class GraphCommonRepository {
     @Transactional(readOnly = true)
     public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList, Integer limit) {
 
-        // 1. 기본 쿼리 (LIMIT 절 제외)
+         
         String baseQuery = """
         MATCH (n) WHERE elementId(n) = $elementId
         MATCH (n)-[r]-(connectedNode)
@@ -215,11 +215,11 @@ public class GraphCommonRepository {
 
         Collection<Map<String, Object>> result = runner.fetch().all();
 
-        // 1. 기본 DTO 변환 (nodes, relationships 생성)
+         
         GraphDetailDto dto = convertToGraphDetailDto(result);
 
-        // [★ 추가됨] 2. 통계 정보(details) 주입
-        // DTO에 담긴 노드 리스트를 꺼내서 통계 정보를 채워넣습니다.
+         
+         
         enrichWithGlobalConnectivity(dto.getNodes());
 
         return dto;
@@ -228,12 +228,12 @@ public class GraphCommonRepository {
     private void enrichWithGlobalConnectivity(List<Map<String, Object>> nodeList) {
         if (nodeList == null || nodeList.isEmpty()) return;
 
-        // 1. 노드 ID 목록 추출
+         
         List<String> nodeIds = nodeList.stream()
                 .map(n -> String.valueOf(n.get("id")))
                 .toList();
 
-        // 2. 통계 쿼리 실행
+         
         String statQuery = """
             MATCH (n)-[r]-()
             WHERE elementId(n) IN $nodeIds
@@ -249,7 +249,7 @@ public class GraphCommonRepository {
                 .fetch()
                 .all();
 
-        // 3. 결과 매핑
+         
         Map<String, List<Map<String, Object>>> statsMap = new HashMap<>();
 
         for (Map<String, Object> row : statsResults) {
@@ -268,7 +268,7 @@ public class GraphCommonRepository {
             statsMap.get(id).add(detailItem);
         }
 
-        // 4. 데이터 주입
+         
         for (Map<String, Object> node : nodeList) {
             String id = String.valueOf(node.get("id"));
             List<Map<String, Object>> details = statsMap.getOrDefault(id, new ArrayList<>());
@@ -283,24 +283,24 @@ public class GraphCommonRepository {
     }
 
 
-    // [변환 헬퍼 메서드] Raw 데이터를 GraphDetailDto로 변환
+     
     private GraphDetailDto convertToGraphDetailDto(Collection<Map<String, Object>> result) {
         Map<String, Map<String, Object>> uniqueNodes = new HashMap<>();
         Map<String, Map<String, Object>> uniqueRels = new HashMap<>();
 
-        // 1. 노드 ID와 라벨 매핑용 Map
+         
         Map<String, String> nodeIdToLabelMap = new HashMap<>();
 
-        // [추가] 2. 스타일 캐시 생성 (요청 1회당 1개)
+         
         Map<String, Map<String, Object>> styleCache = new HashMap<>();
 
         Map<String, Object> centerNodeData = null;
 
         for (Map<String, Object> row : result) {
-            // --- 1. 중심 노드 (n) 처리 ---
+             
             Entity centerEntity = (Entity) row.get("n");
 
-            // [변경] mapNodeToMap 호출 시 styleCache 전달
+             
             Map<String, Object> centerMap = mapNodeToMap(centerEntity, styleCache);
 
             uniqueNodes.put(centerEntity.elementId(), centerMap);
@@ -310,18 +310,18 @@ public class GraphCommonRepository {
                 centerNodeData = centerMap;
             }
 
-            // --- 2. 이웃 노드 (connectedNode) 처리 ---
+             
             Entity neighborEntity = (Entity) row.get("connectedNode");
             if (neighborEntity != null) {
-                // [변경] mapNodeToMap 호출 시 styleCache 전달
+                 
                 uniqueNodes.put(neighborEntity.elementId(), mapNodeToMap(neighborEntity, styleCache));
                 saveNodeLabel(neighborEntity, nodeIdToLabelMap);
             }
 
-            // --- 3. 관계 (r) 처리 ---
+             
             Entity relationship = (Entity) row.get("r");
             if (relationship != null) {
-                // [변경] mapRelationshipToMap 호출 시 styleCache 전달
+                 
                 uniqueRels.put(relationship.elementId(),
                         mapRelationshipToMap(relationship, nodeIdToLabelMap, styleCache));
             }
@@ -345,7 +345,7 @@ public class GraphCommonRepository {
         }
     }
 
-    // (참고) Neo4j Node 객체를 Map으로 바꾸는 메서드 (기존 로직 활용)
+     
     private Map<String, Object> mapNodeToMap(Entity node, Map<String, Map<String, Object>> styleCache) {
         Map<String, Object> map = new HashMap<>(node.asMap());
         map.put("id", node.elementId());
@@ -354,14 +354,14 @@ public class GraphCommonRepository {
             Node n = (Node) node;
             map.put("labels", n.labels());
 
-            // 대표 라벨 추출
+             
             String label = "Node";
             if (n.labels().iterator().hasNext()) {
                 label = n.labels().iterator().next();
             }
 
-            // [추가] 스타일 조회 및 적용
-            // 라벨을 기준으로 스타일을 가져와서 'style' 키에 저장
+             
+             
             Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
             if (style != null) {
                 map.put("style", style);
@@ -370,7 +370,7 @@ public class GraphCommonRepository {
         return map;
     }
 
-    // (참고) Neo4j Relationship 객체를 Map으로 바꾸는 메서드
+     
     private Map<String, Object> mapRelationshipToMap(Entity rel, Map<String, String> nodeIdToLabelMap,
             Map<String, Map<String, Object>> styleCache) {
         Map<String, Object> map = new HashMap<>(rel.asMap());
@@ -405,7 +405,7 @@ public class GraphCommonRepository {
 
             Map<String, Object> relStyle = graphUtil.getStyleConfig(type, "RELATIONSHIP", styleCache);
             if (relStyle != null) {
-                map.put("style", relStyle); // 관계 자체의 스타일
+                map.put("style", relStyle);  
             }
         }
         return map;
@@ -415,29 +415,29 @@ public class GraphCommonRepository {
         String explainQuery = "EXPLAIN " + cypherQuery;
         Map<String, Object> result = new HashMap<>();
 
-        // Using raw Driver session to ensure we catch exceptions directly without
-        // Spring translation/transaction interference
+         
+         
         try (org.neo4j.driver.Session session = driver.session()) {
             session.run(explainQuery).consume();
             result.put("valid", true);
             result.put("message", "Valid Cypher Query");
         } catch (Exception e) {
             result.put("valid", false);
-            // e.getMessage() usually contains the "Invalid input..." string from Neo4j
+             
             result.put("message", e.getMessage());
         }
         return result;
     }
 
-    // [3] 외부 쿼리 실행기 (보안 강화 버전)
-    // readOnly = true: DB 드라이버 차원에서 쓰기 시도 시 예외 발생시킴
+     
+     
     @Transactional(readOnly = true)
     public Collection<Map<String, Object>> executeRawCypher(String cypherQuery) {
 
-        // 1차 방어: 금칙어 검사 (대소문자 무시)
+         
         String upperQuery = cypherQuery.toUpperCase().trim();
 
-        // 위험한 키워드가 있으면 즉시 차단
+         
         if (upperQuery.contains("DELETE") ||
                 upperQuery.contains("DETACH") ||
                 upperQuery.contains("CREATE") ||
@@ -447,7 +447,7 @@ public class GraphCommonRepository {
             throw new IllegalArgumentException("보안 경고: 데이터 변경 쿼리(DELETE, CREATE 등)는 실행할 수 없습니다.");
         }
 
-        // 2차 방어: @Transactional(readOnly=true)에 의해 쓰기 작업 시 롤백/예외 발생
+         
         return neo4jClient.query(cypherQuery)
                 .fetch()
                 .all();
@@ -456,7 +456,7 @@ public class GraphCommonRepository {
     @Transactional(readOnly = true)
     public GraphExpansionStatsDto getNodeExpansionStats(String elementId, List<String> excludeRelIds) {
 
-        // 제외할 ID가 없으면 빈 리스트 처리
+         
         List<String> excludes = (excludeRelIds == null) ? Collections.emptyList() : excludeRelIds;
 
         String query = """
@@ -479,15 +479,15 @@ public class GraphCommonRepository {
 
         Collection<Map<String, Object>> result = neo4jClient.query(query)
                 .bind(elementId).to("elementId")
-                .bind(excludes).to("excludeIds") // 파라미터 바인딩
+                .bind(excludes).to("excludeIds")  
                 .fetch()
                 .all();
 
-        return convertToExpansionStatsDto(result); // 기존 변환 로직 그대로 사용
+        return convertToExpansionStatsDto(result);  
     }
 
     private GraphExpansionStatsDto convertToExpansionStatsDto(Collection<Map<String, Object>> result) {
-        // 1. 집계용 Map 생성 (Key -> Dto)
+         
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> relMap = new HashMap<>();
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> catMap = new HashMap<>();
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> pairMap = new HashMap<>();
@@ -499,27 +499,27 @@ public class GraphCommonRepository {
             String direction = (String) row.get("direction");
             long count = ((Number) row.get("cnt")).longValue();
 
-            // ---------------------------------------------------------
-            // (1) Relationships 집계: [관계명 + 방향]이 같으면 합침
-            // ---------------------------------------------------------
+             
+             
+             
             String relKey = relType + "|" + direction;
             relMap.compute(relKey, (k, v) -> {
                 if (v == null) {
                     return GraphExpansionStatsDto.ExpansionItemDto.builder()
-                            .id("rel-" + k) // 임시 ID
+                            .id("rel-" + k)  
                             .label(relType)
                             .direction(direction)
                             .count(count)
                             .build();
                 } else {
-                    v.setCount(v.getCount() + count); // 카운트 누적
+                    v.setCount(v.getCount() + count);  
                     return v;
                 }
             });
 
-            // ---------------------------------------------------------
-            // (2) Categories 집계: [타겟라벨]이 같으면 합침 (방향/관계 무시)
-            // ---------------------------------------------------------
+             
+             
+             
             String catKey = targetLabel;
             catMap.compute(catKey, (k, v) -> {
                 if (v == null) {
@@ -534,10 +534,10 @@ public class GraphCommonRepository {
                 }
             });
 
-            // ---------------------------------------------------------
-            // (3) Pairs 집계: [관계명 + 방향 + 타겟라벨]이 같으면 합침
-            //     (쿼리에서 이미 그룹핑되지만 안전하게 한 번 더)
-            // ---------------------------------------------------------
+             
+             
+             
+             
             String pairKey = relType + "|" + direction + "|" + targetLabel;
             pairMap.compute(pairKey, (k, v) -> {
                 if (v == null) {
@@ -555,12 +555,12 @@ public class GraphCommonRepository {
             });
         }
 
-        // Map -> List 변환 및 ID 재할당 (깔끔하게 index로)
+         
         List<GraphExpansionStatsDto.ExpansionItemDto> rels = new ArrayList<>(relMap.values());
         List<GraphExpansionStatsDto.ExpansionItemDto> cats = new ArrayList<>(catMap.values());
         List<GraphExpansionStatsDto.ExpansionItemDto> pairs = new ArrayList<>(pairMap.values());
 
-        // ID 예쁘게 다시 매기기 (선택사항)
+         
         for (int i = 0; i < rels.size(); i++) rels.get(i).setId("rel-" + i);
         for (int i = 0; i < cats.size(); i++) cats.get(i).setId("cat-" + i);
         for (int i = 0; i < pairs.size(); i++) pairs.get(i).setId("pair-" + i);

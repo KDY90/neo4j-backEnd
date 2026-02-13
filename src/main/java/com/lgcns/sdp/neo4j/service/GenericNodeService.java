@@ -28,20 +28,20 @@ public class GenericNodeService {
         String label = requestDto.getLabel();
         Map<String, Object> properties = requestDto.getProperties();
 
-        // 1. 라벨 유효성 검사
+         
         if (label == null || label.trim().isEmpty()) {
             throw new IllegalArgumentException("Label cannot be empty");
         }
 
-        // 2. 쿼리 생성 (특수문자 방지 백틱 추가)
+         
         String query = String.format("CREATE (n:`%s` $props) RETURN n", label);
 
-        // 3. 실행 및 DTO 매핑
+         
         return neo4jClient.query(query)
                 .bind(properties).to("props")
                 .fetchAs(GraphCreateNodeResponseDto.class)
                 .mappedBy((typeSystem, record) -> {
-                    // 3-1. 생성된 노드 가져오기
+                     
                     Node node = record.get("n").asNode();
                     String nodeLabel = node.labels().iterator().next();
 
@@ -50,12 +50,12 @@ public class GenericNodeService {
                             "NODE",
                             new HashMap<>());
 
-                    // 3-3. DTO 빌드 (style 포함)
+                     
                     return GraphCreateNodeResponseDto.builder()
                             .elementId(node.elementId())
                             .label(nodeLabel)
                             .properties(node.asMap())
-                            .style(styleConfig) // [추가] 스타일 설정
+                            .style(styleConfig)  
                             .build();
                 })
                 .one()
@@ -63,7 +63,7 @@ public class GenericNodeService {
     }
 
     public GraphCreateNodeResponseDto updateNode(String elementId, Map<String, Object> properties) {
-        // Remove "labels" from properties if it exists, as it's metadata
+         
         if (properties.containsKey("labels")) {
             properties.remove("labels");
         }

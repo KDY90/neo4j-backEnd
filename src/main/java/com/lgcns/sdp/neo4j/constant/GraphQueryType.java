@@ -7,7 +7,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum GraphQueryType {
 
-    // 1. 전체 스키마(라벨+프로퍼티 타입) 조회
+     
     SCHEMA_INFO("""
             CALL db.schema.nodeTypeProperties()
             YIELD nodeType, propertyName, propertyTypes
@@ -18,7 +18,7 @@ public enum GraphQueryType {
                    collect({name: propertyName, type: type}) AS propsList
             """),
 
-    // 2. 전체 라벨별 데이터 개수 조회 (Bloom용)
+     
     LABEL_COUNTS("""
             MATCH (n)
             UNWIND labels(n) AS label

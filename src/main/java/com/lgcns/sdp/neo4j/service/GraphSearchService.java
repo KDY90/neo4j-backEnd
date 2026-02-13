@@ -7,11 +7,11 @@ import com.lgcns.sdp.neo4j.util.GraphUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-// [GROUP 1] Java 기본 유틸 (여기서 Set, List, Map을 가져옵니다)
+ 
 import java.util.*;
 
-// [GROUP 2] Cypher-DSL (쿼리 생성용) - *를 쓰지 않고 필요한 것만 가져옵니다.
-// (Set은 가져오지 않아서 java.util.Set과 충돌을 막습니다)
+ 
+ 
 import org.neo4j.cypherdsl.core.Cypher;
 import org.neo4j.cypherdsl.core.Condition;
 import org.neo4j.cypherdsl.core.Statement;
@@ -23,7 +23,7 @@ import org.neo4j.cypherdsl.core.Expression;
 import org.neo4j.cypherdsl.core.RelationshipChain;
 import org.neo4j.cypherdsl.core.renderer.Renderer;
 
-// 코드 본문에서 그냥 'Node', 'Relationship'이라고 쓰면 이놈들(쿼리 생성용)입니다.
+ 
 import org.neo4j.cypherdsl.core.Node;
 import org.neo4j.cypherdsl.core.Relationship;
 
@@ -51,7 +51,7 @@ public class GraphSearchService {
                     .build();
         }
 
-        // 1. SAVED_QUERY 체크
+         
         Optional<CypherBlock> savedQueryBlock = cyphers.stream()
                 .filter(block -> "SAVED_QUERY".equals(block.getType()))
                 .findFirst();
@@ -60,11 +60,11 @@ public class GraphSearchService {
             return executeSavedQuery(savedQueryBlock.get(),limit);
         }
 
-        // 2. 동적 쿼리 빌드
+         
         List<Condition> whereConditions = new ArrayList<>();
 
         CypherBlock firstBlock = cyphers.get(0);
-        // 여기서 Node는 위에서 import한 DSL Node입니다.
+         
         Node rootNode = createDslNode(firstBlock, 0);
 
         collectConditions(rootNode, firstBlock, whereConditions ,requestDto.isCaseInsensitiveSearch());
@@ -82,7 +82,7 @@ public class GraphSearchService {
             currentPath = extendPath(currentPath, nextNode, relBlock, i);
 
             String relName = "r" + i;
-            // 관계 조건 생성을 위한 프록시
+             
             Relationship relProxy = Cypher.anyNode()
                     .relationshipTo(Cypher.anyNode(), relBlock.getLabel())
                     .named(relName);
@@ -105,7 +105,7 @@ public class GraphSearchService {
 
         String queryString = Renderer.getDefaultRenderer().render(statement);
 
-        // 실행
+         
         Collection<Map<String, Object>> queryResult = neo4jClient.query(queryString)
                 .bindAll(statement.getCatalog().getParameters())
                 .fetch()
@@ -139,7 +139,7 @@ public class GraphSearchService {
         return convertToGroupData(queryResult,null);
     }
 
-    // --- Helper Methods (Query Building) ---
+     
 
     private Node createDslNode(CypherBlock block, int index) {
         return "ANY".equals(block.getLabel())
@@ -147,7 +147,7 @@ public class GraphSearchService {
                 : Cypher.node(block.getLabel()).named("n" + index);
     }
 
-    // [핵심] 여기서 Relationship 처리가 추가되었습니다.
+     
     private ExposesRelationships<?> extendPath(ExposesRelationships<?> from, Node to, CypherBlock block, int index) {
         String label = "ANY".equals(block.getLabel()) ? "" : block.getLabel();
         String direction = block.getDirection() != null ? block.getDirection() : "BOTH";
@@ -160,7 +160,7 @@ public class GraphSearchService {
                 default -> node.relationshipBetween(to, label).named(relName);
             };
         }
-        // [수정] Relationship 타입 분기 추가 (이게 없어서 에러 났음)
+         
         else if (from instanceof Relationship rel) {
             return switch (direction) {
                 case "OUT" -> rel.relationshipTo(to, label).named(relName);
@@ -198,7 +198,7 @@ public class GraphSearchService {
         if ("IS_NULL".equals(operator)) return property.isNull();
         if ("IS_NOT_NULL".equals(operator)) return property.isNotNull();
 
-        // 대소문자 무시 설정이고 값이 문자열일 때만 처리
+         
         if (caseInsensitive && value instanceof String strValue) {
             Expression propertyLower = Cypher.toLower(property);
             Expression valueLower = Cypher.literalOf(strValue.toLowerCase());
@@ -214,7 +214,7 @@ public class GraphSearchService {
             };
         }
 
-        // 기본 로직 (대소문자 구분 또는 문자열이 아닌 경우)
+         
         Expression valExpr = Cypher.literalOf(value);
         return switch (operator) {
             case "NOT_EQUALS" -> property.isNotEqualTo(valExpr);
@@ -260,17 +260,17 @@ public class GraphSearchService {
                                    Map<String, Map<String, Object>> nodeInfoMap) {
         if (item == null) return;
 
-        // org.neo4j.driver.types.Path 사용
+         
         if (item instanceof org.neo4j.driver.types.Path) {
             org.neo4j.driver.types.Path path = (org.neo4j.driver.types.Path) item;
             path.nodes().forEach(node -> processNode(node, nodeList, visitedNodeIds, styleCache, nodeInfoMap));
             path.relationships().forEach(rel -> processRelationship(rel, edgeList, visitedEdgeIds, styleCache, nodeInfoMap));
         }
-        // org.neo4j.driver.types.Node 사용
+         
         else if (item instanceof org.neo4j.driver.types.Node) {
             processNode((org.neo4j.driver.types.Node) item, nodeList, visitedNodeIds, styleCache, nodeInfoMap);
         }
-        // org.neo4j.driver.types.Relationship 사용
+         
         else if (item instanceof org.neo4j.driver.types.Relationship) {
             processRelationship((org.neo4j.driver.types.Relationship) item, edgeList, visitedEdgeIds, styleCache, nodeInfoMap);
         }
@@ -290,10 +290,10 @@ public class GraphSearchService {
         String id = node.elementId();
         String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "Unknown";
 
-        // 1. DB에서 해당 라벨의 스타일 설정을 가져옴
+         
         Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
 
-        // 2. 화면에 표시할 캡션 리스트 추출 로직 시작
+         
         List<String> displayCaptions = new ArrayList<>();
         Map<String, Object> nodeProps = node.asMap();
 
@@ -306,10 +306,10 @@ public class GraphSearchService {
 
                 if (showOnNode) {
                     if ("nodeLabel".equals(propertyKey)) {
-                        // [Case 1] nodeLabel인 경우 실제 노드 라벨(Category) 추가
+                         
                         displayCaptions.add(label);
                     } else if (nodeProps.containsKey(propertyKey)) {
-                        // [Case 2] 일반 프로퍼티인 경우 노드 속성에서 실제 Value 추출
+                         
                         Object value = nodeProps.get(propertyKey);
                         if (value != null) {
                             displayCaptions.add(value.toString());
@@ -322,12 +322,10 @@ public class GraphSearchService {
 
 
 
-        // 만약 설정이 하나도 없다면 기본으로 라벨이라도 보여줌 (Fallback)
-        /*if (displayCaptions.isEmpty()) {
-            displayCaptions.add(label);
-        }*/
+         
+         
 
-        // 결과물: "italic" 같은 포맷팅은 프론트에서 처리하므로, 여기선 문자열만 합쳐서 보냄
+         
         String finalDisplayLabel = String.join(",", displayCaptions);
 
         Map<String, Object> info = new HashMap<>();
@@ -340,7 +338,7 @@ public class GraphSearchService {
             Map<String, Object> nodeData = new HashMap<>(nodeProps);
             nodeData.put("id", id);
             nodeData.put("label", label);
-            nodeData.put("displayLabel", finalDisplayLabel); // 프론트에서 노드 위에 바로 띄울 텍스트
+            nodeData.put("displayLabel", finalDisplayLabel);  
             if (style != null) nodeData.put("style", style);
             nodeList.add(nodeData);
         }
@@ -383,19 +381,16 @@ public class GraphSearchService {
         }
     }
 
-    /**
-     * [신규] 노드 목록을 받아 DB에서 '전체 연결 통계'를 조회하여 주입하는 메서드
-     * 화면에 보이지 않는 관계까지 모두 포함됩니다.
-     */
+     
     private void enrichWithGlobalConnectivity(List<Map<String, Object>> nodeList, List<CypherBlock> cyphers) {
         if (nodeList.isEmpty()) return;
 
-        // 1. 노드 ID 목록 추출
+         
         List<String> nodeIds = nodeList.stream()
                 .map(n -> String.valueOf(n.get("id")))
                 .toList();
 
-        // 2. 통계 쿼리 실행 (DB에서는 일단 다 가져옵니다)
+         
         String statQuery = """
             MATCH (n)-[r]-()
             WHERE elementId(n) IN $nodeIds
@@ -411,7 +406,7 @@ public class GraphSearchService {
                 .fetch()
                 .all();
 
-        // 3. 결과 매핑 (여기서 필터링 수행)
+         
         Map<String, List<Map<String, Object>>> statsMap = new HashMap<>();
 
         for (Map<String, Object> row : statsResults) {
@@ -431,7 +426,7 @@ public class GraphSearchService {
             statsMap.get(id).add(detailItem);
         }
 
-        // 4. 데이터 주입 (기존과 동일)
+         
         for (Map<String, Object> node : nodeList) {
             String id = String.valueOf(node.get("id"));
             List<Map<String, Object>> details = statsMap.getOrDefault(id, new ArrayList<>());
