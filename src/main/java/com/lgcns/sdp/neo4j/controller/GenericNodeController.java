@@ -11,7 +11,7 @@ import java.util.Collection;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/nodes")
+@RequestMapping("/api/v1/nodes")
 @RequiredArgsConstructor
 public class GenericNodeController {
 

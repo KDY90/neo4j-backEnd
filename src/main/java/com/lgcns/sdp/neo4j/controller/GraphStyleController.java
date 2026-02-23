@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/graph/style")
+@RequestMapping("/api/v1/graph/style")
 @RequiredArgsConstructor
 public class GraphStyleController {
 

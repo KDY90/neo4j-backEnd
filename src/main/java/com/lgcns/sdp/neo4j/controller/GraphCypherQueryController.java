@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/graph-cypher-query")
+@RequestMapping("/api/v1/graph-cypher-query")
 @RequiredArgsConstructor
 public class GraphCypherQueryController {
 
