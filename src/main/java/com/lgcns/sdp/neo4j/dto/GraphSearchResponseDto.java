@@ -10,4 +10,8 @@ import java.util.Map;
 public class GraphSearchResponseDto {
     private List<Map<String, Object>> nodes;
     private List<Map<String, Object>> relationships;
+
+    private Map<String, Object> nodeStyles;
+    private Map<String, Object> relationshipStyles;
+
 }

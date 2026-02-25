@@ -7,11 +7,10 @@ import com.lgcns.sdp.neo4j.util.GraphUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
- 
+
 import java.util.*;
 
- 
- 
+
 import org.neo4j.cypherdsl.core.Cypher;
 import org.neo4j.cypherdsl.core.Condition;
 import org.neo4j.cypherdsl.core.Statement;
@@ -23,7 +22,7 @@ import org.neo4j.cypherdsl.core.Expression;
 import org.neo4j.cypherdsl.core.RelationshipChain;
 import org.neo4j.cypherdsl.core.renderer.Renderer;
 
- 
+
 import org.neo4j.cypherdsl.core.Node;
 import org.neo4j.cypherdsl.core.Relationship;
 
@@ -51,23 +50,23 @@ public class GraphSearchService {
                     .build();
         }
 
-         
+
         Optional<CypherBlock> savedQueryBlock = cyphers.stream()
                 .filter(block -> "SAVED_QUERY".equals(block.getType()))
                 .findFirst();
 
         if (savedQueryBlock.isPresent()) {
-            return executeSavedQuery(savedQueryBlock.get(),limit);
+            return executeSavedQuery(savedQueryBlock.get(), limit);
         }
 
-         
+
         List<Condition> whereConditions = new ArrayList<>();
 
         CypherBlock firstBlock = cyphers.get(0);
-         
+
         Node rootNode = createDslNode(firstBlock, 0);
 
-        collectConditions(rootNode, firstBlock, whereConditions ,requestDto.isCaseInsensitiveSearch());
+        collectConditions(rootNode, firstBlock, whereConditions, requestDto.isCaseInsensitiveSearch());
 
         ExposesRelationships<?> currentPath = rootNode;
 
@@ -82,13 +81,13 @@ public class GraphSearchService {
             currentPath = extendPath(currentPath, nextNode, relBlock, i);
 
             String relName = "r" + i;
-             
+
             Relationship relProxy = Cypher.anyNode()
                     .relationshipTo(Cypher.anyNode(), relBlock.getLabel())
                     .named(relName);
 
-            collectConditions(relProxy, relBlock, whereConditions,requestDto.isCaseInsensitiveSearch());
-            collectConditions(nextNode, nextNodeBlock, whereConditions,requestDto.isCaseInsensitiveSearch());
+            collectConditions(relProxy, relBlock, whereConditions, requestDto.isCaseInsensitiveSearch());
+            collectConditions(nextNode, nextNodeBlock, whereConditions, requestDto.isCaseInsensitiveSearch());
         }
 
         PatternElement finalPattern = (PatternElement) currentPath;
@@ -105,13 +104,13 @@ public class GraphSearchService {
 
         String queryString = Renderer.getDefaultRenderer().render(statement);
 
-         
+
         Collection<Map<String, Object>> queryResult = neo4jClient.query(queryString)
                 .bindAll(statement.getCatalog().getParameters())
                 .fetch()
                 .all();
 
-        return convertToGroupData(queryResult , cyphers);
+        return convertToGroupData(queryResult, cyphers);
     }
 
     private GraphSearchResponseDto executeSavedQuery(CypherBlock block, int limit) {
@@ -136,10 +135,9 @@ public class GraphSearchService {
                 .fetch()
                 .all();
 
-        return convertToGroupData(queryResult,null);
+        return convertToGroupData(queryResult, null);
     }
 
-     
 
     private Node createDslNode(CypherBlock block, int index) {
         return "ANY".equals(block.getLabel())
@@ -147,7 +145,7 @@ public class GraphSearchService {
                 : Cypher.node(block.getLabel()).named("n" + index);
     }
 
-     
+
     private ExposesRelationships<?> extendPath(ExposesRelationships<?> from, Node to, CypherBlock block, int index) {
         String label = "ANY".equals(block.getLabel()) ? "" : block.getLabel();
         String direction = block.getDirection() != null ? block.getDirection() : "BOTH";
@@ -159,16 +157,13 @@ public class GraphSearchService {
                 case "IN" -> node.relationshipFrom(to, label).named(relName);
                 default -> node.relationshipBetween(to, label).named(relName);
             };
-        }
-         
-        else if (from instanceof Relationship rel) {
+        } else if (from instanceof Relationship rel) {
             return switch (direction) {
                 case "OUT" -> rel.relationshipTo(to, label).named(relName);
                 case "IN" -> rel.relationshipFrom(to, label).named(relName);
                 default -> rel.relationshipBetween(to, label).named(relName);
             };
-        }
-        else if (from instanceof RelationshipChain chain) {
+        } else if (from instanceof RelationshipChain chain) {
             return switch (direction) {
                 case "OUT" -> chain.relationshipTo(to, label).named(relName);
                 case "IN" -> chain.relationshipFrom(to, label).named(relName);
@@ -178,7 +173,7 @@ public class GraphSearchService {
         throw new IllegalArgumentException("지원하지 않는 경로 타입입니다: " + from.getClass().getName());
     }
 
-    private void collectConditions(PropertyContainer container, CypherBlock block, List<Condition> conditions,boolean caseInsensitive) {
+    private void collectConditions(PropertyContainer container, CypherBlock block, List<Condition> conditions, boolean caseInsensitive) {
         if (block.getProperties() == null || block.getProperties().isEmpty()) return;
 
         block.getProperties().forEach((key, val) -> {
@@ -190,7 +185,7 @@ public class GraphSearchService {
                 if (valMap.containsKey("value")) value = valMap.get("value");
                 if (valMap.containsKey("operator")) operator = (String) valMap.get("operator");
             }
-            conditions.add(buildCondition(property, operator, value,caseInsensitive));
+            conditions.add(buildCondition(property, operator, value, caseInsensitive));
         });
     }
 
@@ -198,7 +193,7 @@ public class GraphSearchService {
         if ("IS_NULL".equals(operator)) return property.isNull();
         if ("IS_NOT_NULL".equals(operator)) return property.isNotNull();
 
-         
+
         if (caseInsensitive && value instanceof String strValue) {
             Expression propertyLower = Cypher.toLower(property);
             Expression valueLower = Cypher.literalOf(strValue.toLowerCase());
@@ -214,7 +209,7 @@ public class GraphSearchService {
             };
         }
 
-         
+
         Expression valExpr = Cypher.literalOf(value);
         return switch (operator) {
             case "NOT_EQUALS" -> property.isNotEqualTo(valExpr);
@@ -227,27 +222,35 @@ public class GraphSearchService {
         };
     }
 
-    private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult ,List<CypherBlock> cyphers) {
+    private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult, List<CypherBlock> cyphers) {
         List<Map<String, Object>> nodeList = new ArrayList<>();
         List<Map<String, Object>> edgeList = new ArrayList<>();
 
         Set<String> visitedNodeIds = new HashSet<>();
         Set<String> visitedEdgeIds = new HashSet<>();
 
-        Map<String, Map<String, Object>> styleCache = new HashMap<>();
+        // 🚀 기존에는 로컬에서만 썼던 styleCache를 최종 응답용으로 분리해서 관리합니다.
+        Map<String, Object> globalNodeStyles = new HashMap<>();
+        Map<String, Object> globalRelStyles = new HashMap<>();
+
+
         Map<String, Map<String, Object>> nodeInfoMap = new HashMap<>();
+        Map<String, Map<String, Object>> dbStyleCache = new HashMap<>();
 
         for (Map<String, Object> row : queryResult) {
             for (Object value : row.values()) {
-                processResultItem(value, nodeList, edgeList, visitedNodeIds, visitedEdgeIds, styleCache, nodeInfoMap);
+                processResultItem(value, nodeList, edgeList, visitedNodeIds, visitedEdgeIds,
+                        dbStyleCache, globalNodeStyles, globalRelStyles, nodeInfoMap);
             }
         }
 
-        enrichWithGlobalConnectivity(nodeList,cyphers);
+        enrichWithGlobalConnectivity(nodeList, cyphers);
 
         return GraphSearchResponseDto.builder()
                 .nodes(nodeList)
                 .relationships(edgeList)
+                .nodeStyles(globalNodeStyles)
+                .relationshipStyles(globalRelStyles)
                 .build();
     }
 
@@ -256,27 +259,23 @@ public class GraphSearchService {
                                    List<Map<String, Object>> edgeList,
                                    Set<String> visitedNodeIds,
                                    Set<String> visitedEdgeIds,
-                                   Map<String, Map<String, Object>> styleCache,
-                                   Map<String, Map<String, Object>> nodeInfoMap) {
+                                   Map<String, Map<String, Object>> dbStyleCache,
+                                   Map<String, Object> globalNodeStyles,
+                                   Map<String, Object> globalRelStyles,
+                                   Map<String, Map<String, Object>> nodeInfoMap
+    ) {
         if (item == null) return;
 
-         
-        if (item instanceof org.neo4j.driver.types.Path) {
-            org.neo4j.driver.types.Path path = (org.neo4j.driver.types.Path) item;
-            path.nodes().forEach(node -> processNode(node, nodeList, visitedNodeIds, styleCache, nodeInfoMap));
-            path.relationships().forEach(rel -> processRelationship(rel, edgeList, visitedEdgeIds, styleCache, nodeInfoMap));
-        }
-         
-        else if (item instanceof org.neo4j.driver.types.Node) {
-            processNode((org.neo4j.driver.types.Node) item, nodeList, visitedNodeIds, styleCache, nodeInfoMap);
-        }
-         
-        else if (item instanceof org.neo4j.driver.types.Relationship) {
-            processRelationship((org.neo4j.driver.types.Relationship) item, edgeList, visitedEdgeIds, styleCache, nodeInfoMap);
-        }
-        else if (item instanceof List<?>) {
-            for (Object subItem : (List<?>) item) {
-                processResultItem(subItem, nodeList, edgeList, visitedNodeIds, visitedEdgeIds, styleCache, nodeInfoMap);
+        if (item instanceof org.neo4j.driver.types.Path path) {
+            path.nodes().forEach(node -> processNode(node, nodeList, visitedNodeIds, dbStyleCache, globalNodeStyles, nodeInfoMap));
+            path.relationships().forEach(rel -> processRelationship(rel, edgeList, visitedEdgeIds, dbStyleCache, globalRelStyles, nodeInfoMap));
+        } else if (item instanceof org.neo4j.driver.types.Node node) {
+            processNode(node, nodeList, visitedNodeIds, dbStyleCache, globalNodeStyles, nodeInfoMap);
+        } else if (item instanceof org.neo4j.driver.types.Relationship rel) {
+            processRelationship(rel, edgeList, visitedEdgeIds, dbStyleCache, globalRelStyles, nodeInfoMap);
+        } else if (item instanceof List<?> list) {
+            for (Object subItem : list) {
+                processResultItem(subItem, nodeList, edgeList, visitedNodeIds, visitedEdgeIds, dbStyleCache, globalNodeStyles, globalRelStyles, nodeInfoMap);
             }
         }
     }
@@ -284,62 +283,55 @@ public class GraphSearchService {
     private void processNode(org.neo4j.driver.types.Node node,
                              List<Map<String, Object>> nodeList,
                              Set<String> visitedNodeIds,
-                             Map<String, Map<String, Object>> styleCache,
-                             Map<String, Map<String, Object>> nodeInfoMap) {
+                             Map<String, Map<String, Object>> dbStyleCache,
+                             Map<String, Object> globalNodeStyles,
+                             Map<String, Map<String, Object>> nodeInfoMap
+    ) {
 
         String id = node.elementId();
         String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "Unknown";
+        Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", dbStyleCache);
 
-         
-        Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
+        if (!nodeInfoMap.containsKey(id)) {
+            Map<String, Object> info = new HashMap<>();
+            info.put("label", label);
+            info.put("style", style);
+            nodeInfoMap.put(id, info);
+        }
 
-         
+        // 🚀 글로벌 스타일 맵에 라벨 기준으로 딱 한 번만 저장
+        if (style != null && !globalNodeStyles.containsKey(label)) {
+            globalNodeStyles.put(label, style);
+        }
+
+        // 라벨 생성 로직
         List<String> displayCaptions = new ArrayList<>();
         Map<String, Object> nodeProps = node.asMap();
 
         if (style != null && style.containsKey("captions")) {
             List<Map<String, Object>> captions = (List<Map<String, Object>>) style.get("captions");
-
             for (Map<String, Object> config : captions) {
                 String propertyKey = (String) config.get("property");
                 boolean showOnNode = (boolean) config.getOrDefault("showOnNode", false);
-
                 if (showOnNode) {
                     if ("nodeLabel".equals(propertyKey)) {
-                         
                         displayCaptions.add(label);
                     } else if (nodeProps.containsKey(propertyKey)) {
-                         
                         Object value = nodeProps.get(propertyKey);
-                        if (value != null) {
-                            displayCaptions.add(value.toString());
-                        }
+                        if (value != null) displayCaptions.add(value.toString());
                     }
                 }
             }
         }
 
-
-
-
-         
-         
-
-         
         String finalDisplayLabel = String.join(",", displayCaptions);
-
-        Map<String, Object> info = new HashMap<>();
-        info.put("label", label);
-        if (style != null) info.put("style", style);
-        nodeInfoMap.put(id, info);
 
         if (!visitedNodeIds.contains(id)) {
             visitedNodeIds.add(id);
             Map<String, Object> nodeData = new HashMap<>(nodeProps);
             nodeData.put("id", id);
             nodeData.put("label", label);
-            nodeData.put("displayLabel", finalDisplayLabel);  
-            if (style != null) nodeData.put("style", style);
+            nodeData.put("displayLabel", finalDisplayLabel);
             nodeList.add(nodeData);
         }
     }
@@ -347,25 +339,26 @@ public class GraphSearchService {
     private void processRelationship(org.neo4j.driver.types.Relationship rel,
                                      List<Map<String, Object>> edgeList,
                                      Set<String> visitedEdgeIds,
-                                     Map<String, Map<String, Object>> styleCache,
-                                     Map<String, Map<String, Object>> nodeInfoMap) {
+                                     Map<String, Map<String, Object>> dbStyleCache,
+                                     Map<String, Object> globalRelStyles,
+                                     Map<String, Map<String, Object>> nodeInfoMap
+    ) {
 
         String id = rel.elementId();
+        String label = rel.type();
+        String sourceId = rel.startNodeElementId();
+        String targetId = rel.endNodeElementId();
+
+        Map<String, Object> style = graphUtil.getStyleConfig(label, "RELATIONSHIP", dbStyleCache);
+
+        if (style != null && !globalRelStyles.containsKey(label)) {
+            globalRelStyles.put(label, style);
+        }
 
         if (!visitedEdgeIds.contains(id)) {
             visitedEdgeIds.add(id);
             Map<String, Object> relData = new HashMap<>(rel.asMap());
 
-            String label = rel.type();
-            String sourceId = rel.startNodeElementId();
-            String targetId = rel.endNodeElementId();
-
-            relData.put("id", id);
-            relData.put("source", sourceId);
-            relData.put("target", targetId);
-            relData.put("label", label);
-
-            Map<String, Object> style = graphUtil.getStyleConfig(label, "RELATIONSHIP", styleCache);
             if (style != null) relData.put("style", style);
 
             if (nodeInfoMap.containsKey(sourceId)) {
@@ -377,36 +370,40 @@ public class GraphSearchService {
                 relData.put("targetStyle", nodeInfoMap.get(targetId).get("style"));
             }
 
+            relData.put("id", id);
+            relData.put("source", rel.startNodeElementId());
+            relData.put("target", rel.endNodeElementId());
+            relData.put("label", label);
+
             edgeList.add(relData);
         }
     }
 
-     
     private void enrichWithGlobalConnectivity(List<Map<String, Object>> nodeList, List<CypherBlock> cyphers) {
         if (nodeList.isEmpty()) return;
 
-         
+
         List<String> nodeIds = nodeList.stream()
                 .map(n -> String.valueOf(n.get("id")))
                 .toList();
 
-         
+
         String statQuery = """
-            MATCH (n)-[r]-()
-            WHERE elementId(n) IN $nodeIds
-            RETURN 
-                elementId(n) as id, 
-                type(r) as relation,
-                CASE WHEN elementId(startNode(r)) = elementId(n) THEN 'TAIL' ELSE 'HEAD' END as position,
-                count(r) as count
-        """;
+                    MATCH (n)-[r]-()
+                    WHERE elementId(n) IN $nodeIds
+                    RETURN 
+                        elementId(n) as id, 
+                        type(r) as relation,
+                        CASE WHEN elementId(startNode(r)) = elementId(n) THEN 'TAIL' ELSE 'HEAD' END as position,
+                        count(r) as count
+                """;
 
         Collection<Map<String, Object>> statsResults = neo4jClient.query(statQuery)
                 .bindAll(Map.of("nodeIds", nodeIds))
                 .fetch()
                 .all();
 
-         
+
         Map<String, List<Map<String, Object>>> statsMap = new HashMap<>();
 
         for (Map<String, Object> row : statsResults) {
@@ -426,7 +423,7 @@ public class GraphSearchService {
             statsMap.get(id).add(detailItem);
         }
 
-         
+
         for (Map<String, Object> node : nodeList) {
             String id = String.valueOf(node.get("id"));
             List<Map<String, Object>> details = statsMap.getOrDefault(id, new ArrayList<>());
