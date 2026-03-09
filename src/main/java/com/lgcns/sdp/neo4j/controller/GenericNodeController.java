@@ -2,6 +2,9 @@ package com.lgcns.sdp.neo4j.controller;
 
 import com.lgcns.sdp.neo4j.dto.GraphCreateNodeRequestDto;
 import com.lgcns.sdp.neo4j.dto.GraphCreateNodeResponseDto;
+import com.lgcns.sdp.neo4j.dto.GraphLabelNodesRequestDto;
+import com.lgcns.sdp.neo4j.dto.GraphLabelNodesResponseDto;
+import com.lgcns.sdp.neo4j.dto.GraphNodeChildrenResponseDto;
 import com.lgcns.sdp.neo4j.service.GenericNodeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +23,16 @@ public class GenericNodeController {
     @GetMapping("/{label}")
     public ResponseEntity<Collection<Map<String, Object>>> getNodesByLabel(@PathVariable String label) {
         return ResponseEntity.ok(genericNodeService.findAllByLabel(label));
+    }
+
+    @PostMapping("/table")
+    public ResponseEntity<GraphLabelNodesResponseDto> getNodesByLabelForTable(@RequestBody GraphLabelNodesRequestDto requestDto) {
+        return ResponseEntity.ok(genericNodeService.getNodesByLabelForTable(requestDto));
+    }
+
+    @GetMapping("/{elementId}/children")
+    public ResponseEntity<GraphNodeChildrenResponseDto> getChildren(@PathVariable String elementId) {
+        return ResponseEntity.ok(genericNodeService.getChildrenNodes(elementId));
     }
 
     @PostMapping("/create")

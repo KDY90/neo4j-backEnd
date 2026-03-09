@@ -5,8 +5,10 @@ import com.lgcns.sdp.neo4j.entity.GraphScene;
 import com.lgcns.sdp.neo4j.repository.GraphSceneRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.HashMap;
 import java.util.List;
@@ -29,7 +31,7 @@ public class GraphSceneService {
     public GraphSceneDto getSceneById(Long id) {
         return graphSceneRepository.findById(id)
                 .map(GraphSceneDto::fromEntity)
-                .orElseThrow(() -> new IllegalArgumentException("GraphScene not found with id: " + id));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "GraphScene not found with id: " + id));
     }
 
     @Transactional
@@ -52,7 +54,7 @@ public class GraphSceneService {
     @Transactional
     public GraphSceneDto updateScene(Long id, GraphSceneDto dto) {
         GraphScene entity = graphSceneRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("GraphScene not found with id: " + id));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "GraphScene not found with id: " + id));
 
         entity.update(
                 dto.getSceneName(),
