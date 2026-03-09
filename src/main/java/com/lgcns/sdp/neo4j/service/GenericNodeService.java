@@ -1,10 +1,6 @@
 package com.lgcns.sdp.neo4j.service;
 
-import com.lgcns.sdp.neo4j.dto.GraphCreateNodeRequestDto;
-import com.lgcns.sdp.neo4j.dto.GraphCreateNodeResponseDto;
-import com.lgcns.sdp.neo4j.dto.GraphLabelNodesRequestDto;
-import com.lgcns.sdp.neo4j.dto.GraphLabelNodesResponseDto;
-import com.lgcns.sdp.neo4j.dto.GraphNodeChildrenResponseDto;
+import com.lgcns.sdp.neo4j.dto.*;
 import com.lgcns.sdp.neo4j.util.GraphUtil;
 import lombok.RequiredArgsConstructor;
 import org.neo4j.cypherdsl.core.Cypher;
@@ -162,17 +158,15 @@ public class GenericNodeService {
                 .orElseThrow(() -> new RuntimeException("Failed to create node"));
     }
 
-    public GraphCreateNodeResponseDto updateNode(String elementId, Map<String, Object> properties) {
-         
-        if (properties.containsKey("labels")) {
-            properties.remove("labels");
-        }
+    public GraphCreateNodeResponseDto updateNode(String elementId, GraphUpdateNodeRequestDto requestDto) {
+
+        requestDto.getProperties().remove("labels");
 
         String query = "MATCH (n) WHERE elementId(n) = $elementId SET n += $props RETURN n";
 
         return neo4jClient.query(query)
                 .bind(elementId).to("elementId")
-                .bind(properties).to("props")
+                .bind(requestDto.getProperties()).to("props")
                 .fetchAs(GraphCreateNodeResponseDto.class)
                 .mappedBy((typeSystem, record) -> {
                     Node node = record.get("n").asNode();
