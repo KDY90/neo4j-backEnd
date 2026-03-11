@@ -218,7 +218,31 @@ public class GraphCommonRepository {
          
         GraphDetailDto dto = convertToGraphDetailDto(result);
 
-         
+
+        Set<String> foundNodeLabels = new HashSet<>();
+        for (Map<String, Object> node : dto.getNodes()) {
+            if (node.containsKey("labels")) {
+                Iterable<String> labels = (Iterable<String>) node.get("labels");
+                if (labels.iterator().hasNext()) {
+                    foundNodeLabels.add(labels.iterator().next());
+                }
+            } else {
+                foundNodeLabels.add((String) node.getOrDefault("label", "Unknown"));
+            }
+        }
+
+        Set<String> foundRelTypes = new HashSet<>();
+        for (Map<String, Object> rel : dto.getRelationships()) {
+            foundRelTypes.add((String) rel.getOrDefault("label", "Unknown"));
+        }
+
+        Map<String, Long> nodeCountMap = new HashMap<>();
+        Map<String, Long> relationCountMap = new HashMap<>();
+
+        fetchDatabaseTotalCounts(foundNodeLabels, foundRelTypes, nodeCountMap, relationCountMap);
+
+        dto.setNodeCount(nodeCountMap);
+        dto.setRelationCount(relationCountMap);
          
         enrichWithGlobalConnectivity(dto.getNodes());
 
@@ -571,5 +595,56 @@ public class GraphCommonRepository {
                 .pairs(pairs)
                 .build();
     }
+
+    private void fetchDatabaseTotalCounts(Set<String> nodeLabels, Set<String> relTypes,
+                                          Map<String, Long> nodeCountMap, Map<String, Long> relCountMap) {
+        if (nodeLabels.isEmpty() && relTypes.isEmpty()) return;
+
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+
+        for (String label : nodeLabels) {
+            if ("Unknown".equals(label)) continue;
+            if (!first) sb.append(" UNION ALL ");
+            sb.append(String.format("CALL { MATCH (n:`%s`) RETURN count(n) AS c } RETURN '%s' AS name, 'NODE' AS type, c AS count", label, label));
+            first = false;
+        }
+
+        for (String type : relTypes) {
+            if ("Unknown".equals(type)) continue;
+            if (!first) sb.append(" UNION ALL ");
+            sb.append(String.format("CALL { MATCH ()-[r:`%s`]->() RETURN count(r) AS c } RETURN '%s' AS name, 'REL' AS type, c AS count", type, type));
+            first = false;
+        }
+
+        if (sb.length() == 0) return;
+
+        try {
+            Collection<Map<String, Object>> counts = neo4jClient.query(sb.toString()).fetch().all();
+
+            for (Map<String, Object> row : counts) {
+                String name = (String) row.get("name");
+                String type = (String) row.get("type");
+                Object countObj = row.get("count");
+
+                long count = 0L;
+                if (countObj instanceof Number num) {
+                    count = num.longValue();
+                } else if (countObj instanceof String str) {
+                    count = Long.parseLong(str);
+                }
+
+                if ("NODE".equals(type)) {
+                    nodeCountMap.put(name, count);
+                } else if ("REL".equals(type)) {
+                    relCountMap.put(name, count);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to fetch database total counts. Query: " + sb.toString() + " Error: " + e.getMessage());
+        }
+    }
+
+
 
 }

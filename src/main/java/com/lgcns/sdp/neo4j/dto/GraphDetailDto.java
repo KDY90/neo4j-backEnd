@@ -13,4 +13,7 @@ public class GraphDetailDto {
     private List<Map<String, Object>> nodes;
 
     private List<Map<String, Object>> relationships;
+
+    private Map<String, Long> nodeCount;
+    private Map<String, Long> relationCount;
 }

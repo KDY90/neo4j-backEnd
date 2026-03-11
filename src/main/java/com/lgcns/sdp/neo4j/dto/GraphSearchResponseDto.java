@@ -14,4 +14,7 @@ public class GraphSearchResponseDto {
     private Map<String, Object> nodeStyles;
     private Map<String, Object> relationshipStyles;
 
+    private Map<String, Long> nodeCount;
+    private Map<String, Long> relationCount;
+
 }

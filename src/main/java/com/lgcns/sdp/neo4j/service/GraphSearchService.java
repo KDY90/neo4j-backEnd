@@ -229,10 +229,8 @@ public class GraphSearchService {
         Set<String> visitedNodeIds = new HashSet<>();
         Set<String> visitedEdgeIds = new HashSet<>();
 
-        // 🚀 기존에는 로컬에서만 썼던 styleCache를 최종 응답용으로 분리해서 관리합니다.
         Map<String, Object> globalNodeStyles = new HashMap<>();
         Map<String, Object> globalRelStyles = new HashMap<>();
-
 
         Map<String, Map<String, Object>> nodeInfoMap = new HashMap<>();
         Map<String, Map<String, Object>> dbStyleCache = new HashMap<>();
@@ -244,13 +242,28 @@ public class GraphSearchService {
             }
         }
 
+        Set<String> foundNodeLabels = new HashSet<>();
+        for (Map<String, Object> node : nodeList) {
+            foundNodeLabels.add((String) node.getOrDefault("label", "Unknown"));
+        }
+
+        Set<String> foundRelTypes = new HashSet<>();
+        for (Map<String, Object> edge : edgeList) {
+            foundRelTypes.add((String) edge.getOrDefault("label", "Unknown"));
+        }
+
         enrichWithGlobalConnectivity(nodeList, cyphers);
 
+        Map<String, Long> nodeCountMap = new HashMap<>();
+        Map<String, Long> relationCountMap = new HashMap<>();
+        fetchDatabaseTotalCounts(foundNodeLabels, foundRelTypes, nodeCountMap, relationCountMap);
         return GraphSearchResponseDto.builder()
                 .nodes(nodeList)
                 .relationships(edgeList)
                 .nodeStyles(globalNodeStyles)
                 .relationshipStyles(globalRelStyles)
+                .nodeCount(nodeCountMap)
+                .relationCount(relationCountMap)
                 .build();
     }
 
@@ -434,6 +447,60 @@ public class GraphSearchService {
 
             node.put("details", details);
             node.put("totalConnectCount", totalConnectCount);
+        }
+    }
+
+    private void fetchDatabaseTotalCounts(Set<String> nodeLabels, Set<String> relTypes,
+                                          Map<String, Long> nodeCountMap, Map<String, Long> relCountMap) {
+        if (nodeLabels.isEmpty() && relTypes.isEmpty()) return;
+
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+
+        // 노드 카운트 쿼리: CALL { MATCH (n:`라벨`) RETURN count(n) AS c } RETURN '라벨' AS name, 'NODE' AS type, c AS count
+        for (String label : nodeLabels) {
+            if ("Unknown".equals(label)) continue;
+            if (!first) sb.append(" UNION ALL ");
+            sb.append(String.format("CALL { MATCH (n:`%s`) RETURN count(n) AS c } RETURN '%s' AS name, 'NODE' AS type, c AS count", label, label));
+            first = false;
+        }
+
+        // 관계 카운트 쿼리
+        for (String type : relTypes) {
+            if ("Unknown".equals(type)) continue;
+            if (!first) sb.append(" UNION ALL ");
+            sb.append(String.format("CALL { MATCH ()-[r:`%s`]->() RETURN count(r) AS c } RETURN '%s' AS name, 'REL' AS type, c AS count", type, type));
+            first = false;
+        }
+
+        if (sb.length() == 0) return;
+
+        try {
+            // DB에 쿼리 실행
+            Collection<Map<String, Object>> counts = neo4jClient.query(sb.toString()).fetch().all();
+
+            // 결과 파싱하여 Map에 할당
+            for (Map<String, Object> row : counts) {
+                String name = (String) row.get("name");
+                String type = (String) row.get("type");
+
+                // 🚀 Number 캐스팅을 가장 안전하게 처리 (에러 방지)
+                Object countObj = row.get("count");
+                long count = 0L;
+                if (countObj instanceof Number num) {
+                    count = num.longValue();
+                } else if (countObj instanceof String str) {
+                    count = Long.parseLong(str);
+                }
+
+                if ("NODE".equals(type)) {
+                    nodeCountMap.put(name, count);
+                } else if ("REL".equals(type)) {
+                    relCountMap.put(name, count);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch database total counts. Query: {}", sb.toString(), e);
         }
     }
 
