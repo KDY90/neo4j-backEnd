@@ -11,3 +11,4 @@ public interface GraphStyleRepository extends JpaRepository<GraphStyle, Long>{
 
     Optional<GraphStyle> findByLabelAndElementType(String label, String elementType);
 }
+

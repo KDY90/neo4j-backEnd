@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Map;
 
 @Entity
@@ -53,12 +54,12 @@ public class GraphScene {
     @Comment("생성일시")
     @CreationTimestamp
     @Column(name = "create_timestamp", updatable = false)
-    private LocalDateTime createTimestamp;
+    private OffsetDateTime createTimestamp;
 
     @Comment("수정일시")
     @UpdateTimestamp
     @Column(name = "update_timestamp")
-    private LocalDateTime updateTimestamp;
+    private OffsetDateTime updateTimestamp;
 
     public void update(String sceneName, String sceneQuery, Integer nodeCount, Integer relCount, Map<String, Object> sceneConfig) {
         if (sceneName != null && !sceneName.trim().isEmpty()) {

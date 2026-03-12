@@ -13,3 +13,4 @@ public interface GraphCypherQueryRepository extends JpaRepository<GraphCypherQue
 
     List<GraphCypherQuery> findByQueryType(String queryType);
 }
+

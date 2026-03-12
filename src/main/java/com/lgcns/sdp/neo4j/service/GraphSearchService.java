@@ -6,29 +6,14 @@ import com.lgcns.sdp.neo4j.dto.GraphSearchResponseDto;
 import com.lgcns.sdp.neo4j.util.GraphUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
-
-import java.util.*;
-
-
-import org.neo4j.cypherdsl.core.Cypher;
-import org.neo4j.cypherdsl.core.Condition;
-import org.neo4j.cypherdsl.core.Statement;
-import org.neo4j.cypherdsl.core.PatternElement;
-import org.neo4j.cypherdsl.core.ExposesRelationships;
-import org.neo4j.cypherdsl.core.PropertyContainer;
-import org.neo4j.cypherdsl.core.Property;
-import org.neo4j.cypherdsl.core.Expression;
-import org.neo4j.cypherdsl.core.RelationshipChain;
+import org.neo4j.cypherdsl.core.*;
 import org.neo4j.cypherdsl.core.renderer.Renderer;
-
-
-import org.neo4j.cypherdsl.core.Node;
-import org.neo4j.cypherdsl.core.Relationship;
-
 import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -312,7 +297,6 @@ public class GraphSearchService {
             nodeInfoMap.put(id, info);
         }
 
-        // 🚀 글로벌 스타일 맵에 라벨 기준으로 딱 한 번만 저장
         if (style != null && !globalNodeStyles.containsKey(label)) {
             globalNodeStyles.put(label, style);
         }
@@ -457,7 +441,6 @@ public class GraphSearchService {
         StringBuilder sb = new StringBuilder();
         boolean first = true;
 
-        // 노드 카운트 쿼리: CALL { MATCH (n:`라벨`) RETURN count(n) AS c } RETURN '라벨' AS name, 'NODE' AS type, c AS count
         for (String label : nodeLabels) {
             if ("Unknown".equals(label)) continue;
             if (!first) sb.append(" UNION ALL ");
@@ -476,15 +459,12 @@ public class GraphSearchService {
         if (sb.length() == 0) return;
 
         try {
-            // DB에 쿼리 실행
             Collection<Map<String, Object>> counts = neo4jClient.query(sb.toString()).fetch().all();
 
-            // 결과 파싱하여 Map에 할당
             for (Map<String, Object> row : counts) {
                 String name = (String) row.get("name");
                 String type = (String) row.get("type");
 
-                // 🚀 Number 캐스팅을 가장 안전하게 처리 (에러 방지)
                 Object countObj = row.get("count");
                 long count = 0L;
                 if (countObj instanceof Number num) {

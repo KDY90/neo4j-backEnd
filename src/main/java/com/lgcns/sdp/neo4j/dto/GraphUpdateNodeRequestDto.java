@@ -1,17 +1,19 @@
 package com.lgcns.sdp.neo4j.dto;
 
-import lombok.Getter;
-import lombok.Setter;
-import lombok.NoArgsConstructor;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.util.Map;
 
 @Getter
-@Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class GraphUpdateNodeRequestDto {
-
+    @Schema(title = "properties", description = "프로퍼티스")
     private Map<String, Object> properties;
 }
+

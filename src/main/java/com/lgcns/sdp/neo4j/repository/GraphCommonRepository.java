@@ -3,18 +3,19 @@ package com.lgcns.sdp.neo4j.repository;
 import com.lgcns.sdp.neo4j.constant.GraphQueryType;
 import com.lgcns.sdp.neo4j.dto.*;
 import com.lgcns.sdp.neo4j.util.GraphUtil;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.neo4j.driver.Value;
 import org.neo4j.driver.types.Entity;
 import org.neo4j.driver.types.Node;
 import org.neo4j.driver.types.Relationship;
-import lombok.RequiredArgsConstructor;
-import org.neo4j.driver.Value;
 import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
-import java.util.stream.Collectors;
-
+@Slf4j
 @Repository
 @RequiredArgsConstructor
 public class GraphCommonRepository {
@@ -25,7 +26,7 @@ public class GraphCommonRepository {
 
     @Transactional(readOnly = true)
     public Collection<GraphSchemaDto> findSchemaInfo() {
-        return neo4jClient.query(GraphQueryType.SCHEMA_INFO.getQuery())  
+        return neo4jClient.query(GraphQueryType.SCHEMA_INFO.getQuery())
                 .fetchAs(GraphSchemaDto.class).mappedBy((typeSystem, record) ->
 
                 {
@@ -42,7 +43,7 @@ public class GraphCommonRepository {
 
     @Transactional(readOnly = true)
     public Collection<GraphLabelCountDto> getLabelCounts() {
-        return neo4jClient.query(GraphQueryType.LABEL_COUNTS.getQuery())  
+        return neo4jClient.query(GraphQueryType.LABEL_COUNTS.getQuery())
                 .fetchAs(GraphLabelCountDto.class)
                 .mappedBy((typeSystem, record) -> new GraphLabelCountDto(
                         record.get("label").asString(),
@@ -56,12 +57,12 @@ public class GraphCommonRepository {
                 .fetchAs(GraphSearchBarDto.class)
                 .mappedBy((typeSystem, record) -> {
 
-                     
+
                     Map<String, Map<String, Object>> styleCache = new HashMap<>();
 
                     Value schema = record.get("schema");
 
-                     
+
                     List<Value> nodesList = schema.get("nodes").asList(v -> v);
                     List<GraphSearchBarDto.NodeSchema> nodeSchemas = nodesList.stream()
                             .map(nodeVal -> {
@@ -75,14 +76,14 @@ public class GraphCommonRepository {
                                                 p.get("type").asString()))
                                         .toList();
 
-                                 
+
                                 Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
 
-                                 
+
                                 return new GraphSearchBarDto.NodeSchema(label, propertySchemas, style);
                             }).toList();
 
-                     
+
                     List<Value> relsList = schema.get("relationships").asList(v -> v);
                     List<GraphSearchBarDto.RelationshipSchema> relSchemas = relsList.stream()
                             .map(relVal -> {
@@ -95,11 +96,11 @@ public class GraphCommonRepository {
                                                 conn.get("tail").asString()))
                                         .toList();
 
-                                 
+
                                 Map<String, Object> style = graphUtil.getStyleConfig(relationshipName, "RELATIONSHIP",
                                         styleCache);
 
-                                 
+
                                 return new GraphSearchBarDto.RelationshipSchema(relationshipName, connections, style);
                             })
                             .toList();
@@ -110,10 +111,10 @@ public class GraphCommonRepository {
                 .orElse(new GraphSearchBarDto(Collections.emptyList(), Collections.emptyList()));
     }
 
-     
+
     @Transactional(readOnly = true)
     public GraphDetailDto findNodeAndNeighbors(String elementId) {
-         
+
         String query = """
                 MATCH (n)
                 WHERE elementId(n) = $elementId
@@ -126,7 +127,7 @@ public class GraphCommonRepository {
                 .fetch()
                 .all();
 
-         
+
         return convertToGraphDetailDto(result);
     }
 
@@ -136,26 +137,26 @@ public class GraphCommonRepository {
         String matchClause = "MATCH (n) WHERE elementId(n) = $elementId ";
         String optionalMatch = "";
 
-         
+
         String relType = (relation != null && !relation.trim().isEmpty()) ? ":" + relation : "";
 
-         
-         
+
+
         String targetNodeStr = "(connectedNode";
         if (targetLabel != null && !targetLabel.trim().isEmpty()) {
             targetNodeStr += ":" + targetLabel;
         }
         targetNodeStr += ")";
 
-         
+
         if ("OUT".equalsIgnoreCase(direction)) {
-             
+
             optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]->%s", relType, targetNodeStr);
         } else if ("IN".equalsIgnoreCase(direction)) {
-             
+
             optionalMatch = String.format("OPTIONAL MATCH (n)<-[r%s]-%s", relType, targetNodeStr);
         } else {
-             
+
             optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]-%s", relType, targetNodeStr);
         }
 
@@ -172,7 +173,7 @@ public class GraphCommonRepository {
     @Transactional(readOnly = true)
     public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList, Integer limit) {
 
-         
+
         String baseQuery = """
         MATCH (n) WHERE elementId(n) = $elementId
         MATCH (n)-[r]-(connectedNode)
@@ -215,7 +216,7 @@ public class GraphCommonRepository {
 
         Collection<Map<String, Object>> result = runner.fetch().all();
 
-         
+
         GraphDetailDto dto = convertToGraphDetailDto(result);
 
 
@@ -241,9 +242,11 @@ public class GraphCommonRepository {
 
         fetchDatabaseTotalCounts(foundNodeLabels, foundRelTypes, nodeCountMap, relationCountMap);
 
-        dto.setNodeCount(nodeCountMap);
-        dto.setRelationCount(relationCountMap);
-         
+        dto = dto.toBuilder()
+                .nodeCount(nodeCountMap)
+                .relationCount(relationCountMap)
+                .build();
+
         enrichWithGlobalConnectivity(dto.getNodes());
 
         return dto;
@@ -252,12 +255,12 @@ public class GraphCommonRepository {
     private void enrichWithGlobalConnectivity(List<Map<String, Object>> nodeList) {
         if (nodeList == null || nodeList.isEmpty()) return;
 
-         
+
         List<String> nodeIds = nodeList.stream()
                 .map(n -> String.valueOf(n.get("id")))
                 .toList();
 
-         
+
         String statQuery = """
             MATCH (n)-[r]-()
             WHERE elementId(n) IN $nodeIds
@@ -273,7 +276,7 @@ public class GraphCommonRepository {
                 .fetch()
                 .all();
 
-         
+
         Map<String, List<Map<String, Object>>> statsMap = new HashMap<>();
 
         for (Map<String, Object> row : statsResults) {
@@ -292,7 +295,7 @@ public class GraphCommonRepository {
             statsMap.get(id).add(detailItem);
         }
 
-         
+
         for (Map<String, Object> node : nodeList) {
             String id = String.valueOf(node.get("id"));
             List<Map<String, Object>> details = statsMap.getOrDefault(id, new ArrayList<>());
@@ -307,24 +310,24 @@ public class GraphCommonRepository {
     }
 
 
-     
+
     private GraphDetailDto convertToGraphDetailDto(Collection<Map<String, Object>> result) {
         Map<String, Map<String, Object>> uniqueNodes = new HashMap<>();
         Map<String, Map<String, Object>> uniqueRels = new HashMap<>();
 
-         
+
         Map<String, String> nodeIdToLabelMap = new HashMap<>();
 
-         
+
         Map<String, Map<String, Object>> styleCache = new HashMap<>();
 
         Map<String, Object> centerNodeData = null;
 
         for (Map<String, Object> row : result) {
-             
+
             Entity centerEntity = (Entity) row.get("n");
 
-             
+
             Map<String, Object> centerMap = mapNodeToMap(centerEntity, styleCache);
 
             uniqueNodes.put(centerEntity.elementId(), centerMap);
@@ -334,18 +337,18 @@ public class GraphCommonRepository {
                 centerNodeData = centerMap;
             }
 
-             
+
             Entity neighborEntity = (Entity) row.get("connectedNode");
             if (neighborEntity != null) {
-                 
+
                 uniqueNodes.put(neighborEntity.elementId(), mapNodeToMap(neighborEntity, styleCache));
                 saveNodeLabel(neighborEntity, nodeIdToLabelMap);
             }
 
-             
+
             Entity relationship = (Entity) row.get("r");
             if (relationship != null) {
-                 
+
                 uniqueRels.put(relationship.elementId(),
                         mapRelationshipToMap(relationship, nodeIdToLabelMap, styleCache));
             }
@@ -369,7 +372,7 @@ public class GraphCommonRepository {
         }
     }
 
-     
+
     private Map<String, Object> mapNodeToMap(Entity node, Map<String, Map<String, Object>> styleCache) {
         Map<String, Object> map = new HashMap<>(node.asMap());
         map.put("id", node.elementId());
@@ -378,14 +381,14 @@ public class GraphCommonRepository {
             Node n = (Node) node;
             map.put("labels", n.labels());
 
-             
+
             String label = "Node";
             if (n.labels().iterator().hasNext()) {
                 label = n.labels().iterator().next();
             }
 
-             
-             
+
+
             Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
             if (style != null) {
                 map.put("style", style);
@@ -394,9 +397,9 @@ public class GraphCommonRepository {
         return map;
     }
 
-     
+
     private Map<String, Object> mapRelationshipToMap(Entity rel, Map<String, String> nodeIdToLabelMap,
-            Map<String, Map<String, Object>> styleCache) {
+                                                     Map<String, Map<String, Object>> styleCache) {
         Map<String, Object> map = new HashMap<>(rel.asMap());
         map.put("id", rel.elementId());
 
@@ -429,7 +432,7 @@ public class GraphCommonRepository {
 
             Map<String, Object> relStyle = graphUtil.getStyleConfig(type, "RELATIONSHIP", styleCache);
             if (relStyle != null) {
-                map.put("style", relStyle);  
+                map.put("style", relStyle);
             }
         }
         return map;
@@ -439,29 +442,29 @@ public class GraphCommonRepository {
         String explainQuery = "EXPLAIN " + cypherQuery;
         Map<String, Object> result = new HashMap<>();
 
-         
-         
+
+
         try (org.neo4j.driver.Session session = driver.session()) {
             session.run(explainQuery).consume();
             result.put("valid", true);
             result.put("message", "Valid Cypher Query");
         } catch (Exception e) {
+            log.error("Cypher 쿼리 실행 중 에러가 발생했습니다.", e);
             result.put("valid", false);
-             
             result.put("message", e.getMessage());
         }
         return result;
     }
 
-     
-     
+
+
     @Transactional(readOnly = true)
     public Collection<Map<String, Object>> executeRawCypher(String cypherQuery) {
 
-         
+
         String upperQuery = cypherQuery.toUpperCase().trim();
 
-         
+
         if (upperQuery.contains("DELETE") ||
                 upperQuery.contains("DETACH") ||
                 upperQuery.contains("CREATE") ||
@@ -471,7 +474,7 @@ public class GraphCommonRepository {
             throw new IllegalArgumentException("보안 경고: 데이터 변경 쿼리(DELETE, CREATE 등)는 실행할 수 없습니다.");
         }
 
-         
+
         return neo4jClient.query(cypherQuery)
                 .fetch()
                 .all();
@@ -480,7 +483,7 @@ public class GraphCommonRepository {
     @Transactional(readOnly = true)
     public GraphExpansionStatsDto getNodeExpansionStats(String elementId, List<String> excludeRelIds) {
 
-         
+
         List<String> excludes = (excludeRelIds == null) ? Collections.emptyList() : excludeRelIds;
 
         String query = """
@@ -503,15 +506,15 @@ public class GraphCommonRepository {
 
         Collection<Map<String, Object>> result = neo4jClient.query(query)
                 .bind(elementId).to("elementId")
-                .bind(excludes).to("excludeIds")  
+                .bind(excludes).to("excludeIds")
                 .fetch()
                 .all();
 
-        return convertToExpansionStatsDto(result);  
+        return convertToExpansionStatsDto(result);
     }
 
     private GraphExpansionStatsDto convertToExpansionStatsDto(Collection<Map<String, Object>> result) {
-         
+
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> relMap = new HashMap<>();
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> catMap = new HashMap<>();
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> pairMap = new HashMap<>();
@@ -523,71 +526,54 @@ public class GraphCommonRepository {
             String direction = (String) row.get("direction");
             long count = ((Number) row.get("cnt")).longValue();
 
-             
-             
-             
+
+
+
             String relKey = relType + "|" + direction;
-            relMap.compute(relKey, (k, v) -> {
-                if (v == null) {
-                    return GraphExpansionStatsDto.ExpansionItemDto.builder()
-                            .id("rel-" + k)  
-                            .label(relType)
-                            .direction(direction)
-                            .count(count)
-                            .build();
-                } else {
-                    v.setCount(v.getCount() + count);  
-                    return v;
-                }
-            });
+            relMap.compute(relKey, (k, v) -> (v == null) ? 
+                GraphExpansionStatsDto.ExpansionItemDto.builder()
+                        .id("rel-" + k)
+                        .label(relType)
+                        .direction(direction)
+                        .count(count)
+                        .build() : 
+                v.toBuilder().count(v.getCount() + count).build()
+            );
 
-             
-             
-             
+
             String catKey = targetLabel;
-            catMap.compute(catKey, (k, v) -> {
-                if (v == null) {
-                    return GraphExpansionStatsDto.ExpansionItemDto.builder()
-                            .id("cat-" + k)
-                            .label(targetLabel)
-                            .count(count)
-                            .build();
-                } else {
-                    v.setCount(v.getCount() + count);
-                    return v;
-                }
-            });
+            catMap.compute(catKey, (k, v) -> (v == null) ? 
+                GraphExpansionStatsDto.ExpansionItemDto.builder()
+                        .id("cat-" + k)
+                        .label(targetLabel)
+                        .count(count)
+                        .build() : 
+                v.toBuilder().count(v.getCount() + count).build()
+            );
 
-             
-             
-             
-             
+
             String pairKey = relType + "|" + direction + "|" + targetLabel;
-            pairMap.compute(pairKey, (k, v) -> {
-                if (v == null) {
-                    return GraphExpansionStatsDto.ExpansionItemDto.builder()
-                            .id("pair-" + k)
-                            .label(relType)
-                            .targetLabel(targetLabel)
-                            .direction(direction)
-                            .count(count)
-                            .build();
-                } else {
-                    v.setCount(v.getCount() + count);
-                    return v;
-                }
-            });
+            pairMap.compute(pairKey, (k, v) -> (v == null) ? 
+                GraphExpansionStatsDto.ExpansionItemDto.builder()
+                        .id("pair-" + k)
+                        .label(relType)
+                        .targetLabel(targetLabel)
+                        .direction(direction)
+                        .count(count)
+                        .build() : 
+                v.toBuilder().count(v.getCount() + count).build()
+            );
         }
 
-         
+
         List<GraphExpansionStatsDto.ExpansionItemDto> rels = new ArrayList<>(relMap.values());
         List<GraphExpansionStatsDto.ExpansionItemDto> cats = new ArrayList<>(catMap.values());
         List<GraphExpansionStatsDto.ExpansionItemDto> pairs = new ArrayList<>(pairMap.values());
 
-         
-        for (int i = 0; i < rels.size(); i++) rels.get(i).setId("rel-" + i);
-        for (int i = 0; i < cats.size(); i++) cats.get(i).setId("cat-" + i);
-        for (int i = 0; i < pairs.size(); i++) pairs.get(i).setId("pair-" + i);
+
+        for (int i = 0; i < rels.size(); i++) rels.set(i, rels.get(i).toBuilder().id("rel-" + i).build());
+        for (int i = 0; i < cats.size(); i++) cats.set(i, cats.get(i).toBuilder().id("cat-" + i).build());
+        for (int i = 0; i < pairs.size(); i++) pairs.set(i, pairs.get(i).toBuilder().id("pair-" + i).build());
 
         return GraphExpansionStatsDto.builder()
                 .relationships(rels)
@@ -641,10 +627,8 @@ public class GraphCommonRepository {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Failed to fetch database total counts. Query: " + sb.toString() + " Error: " + e.getMessage());
+            log.error("Failed to fetch database total counts. Query: {}", sb.toString(), e);
         }
     }
-
-
 
 }

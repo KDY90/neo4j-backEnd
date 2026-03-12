@@ -2,7 +2,7 @@ package com.lgcns.sdp.neo4j.service;
 
 import com.lgcns.sdp.neo4j.dto.*;
 import com.lgcns.sdp.neo4j.repository.GraphCommonRepository;
-import com.lgcns.sdp.neo4j.repository.GraphStyleRepository;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -60,3 +60,4 @@ public class GraphCommonService {
     }
 
 }
+

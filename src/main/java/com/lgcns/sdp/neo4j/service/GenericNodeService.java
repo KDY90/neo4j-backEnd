@@ -2,6 +2,7 @@ package com.lgcns.sdp.neo4j.service;
 
 import com.lgcns.sdp.neo4j.dto.*;
 import com.lgcns.sdp.neo4j.util.GraphUtil;
+
 import lombok.RequiredArgsConstructor;
 import org.neo4j.cypherdsl.core.Cypher;
 import org.neo4j.cypherdsl.core.Statement;
@@ -16,14 +17,13 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
-@org.springframework.transaction.annotation.Transactional(readOnly = true)
 public class GenericNodeService {
 
     private final Neo4jClient neo4jClient;
     private final GraphUtil graphUtil;
 
     public Collection<Map<String, Object>> findAllByLabel(String label) {
-        String query = String.format("MATCH (n:`%s`) RETURN n{.*, id: elementId(n)} as data", label);
+        String query = String.format("MATCH (n:%s) RETURN n{.*, id: elementId(n)} as data", label);
         return neo4jClient.query(query).fetch().all();
     }
 
@@ -69,7 +69,7 @@ public class GenericNodeService {
             nodeData.put("id", rootNode.elementId());
             nodeData.put("label", rootNode.labels().iterator().hasNext() ? rootNode.labels().iterator().next() : "");
             nodeData.put("hasChildren", hasChildren);
-            
+
             finalData.add(nodeData);
         }
 
@@ -119,7 +119,6 @@ public class GenericNodeService {
                 .build();
     }
 
-
     public GraphCreateNodeResponseDto createNode(GraphCreateNodeRequestDto requestDto) {
         String label = requestDto.getLabel();
         Map<String, Object> properties = requestDto.getProperties();
@@ -151,7 +150,7 @@ public class GenericNodeService {
                             .elementId(node.elementId())
                             .label(nodeLabel)
                             .properties(node.asMap())
-                            .style(styleConfig)  
+                            .style(styleConfig)
                             .build();
                 })
                 .one()
@@ -195,3 +194,4 @@ public class GenericNodeService {
                 .run();
     }
 }
+

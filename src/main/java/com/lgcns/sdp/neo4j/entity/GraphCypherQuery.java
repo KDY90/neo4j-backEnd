@@ -6,7 +6,7 @@ import org.hibernate.annotations.Comment;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "tb_graph_cypher_query", schema = "vcisodb")
@@ -44,12 +44,12 @@ public class GraphCypherQuery {
     @Comment("생성일시")
     @CreationTimestamp
     @Column(name = "create_timestamp", updatable = false)
-    private LocalDateTime createTimestamp;
+    private OffsetDateTime createTimestamp;
 
     @Comment("수정일시")
     @UpdateTimestamp
     @Column(name = "update_timestamp")
-    private LocalDateTime updateTimestamp;
+    private OffsetDateTime updateTimestamp;
 
     public void update(String title, String cypherQuery, String description, String queryType) {
         this.title = title;

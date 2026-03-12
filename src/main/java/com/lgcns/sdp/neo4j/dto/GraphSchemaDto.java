@@ -1,10 +1,14 @@
 package com.lgcns.sdp.neo4j.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
+
 import java.util.Map;
 
 @Builder
 public record GraphSchemaDto(
-                String label,
-                Map<String, String> properties) {
+        @Schema(title = "스키마 label", description = "스키마 label")
+        String label,
+        @Schema(title = "스키마 properties", description = "스키마 properties")
+        Map<String, String> properties) {
 }

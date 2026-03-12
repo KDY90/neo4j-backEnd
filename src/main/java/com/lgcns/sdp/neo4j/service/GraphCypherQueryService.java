@@ -85,3 +85,4 @@ public class GraphCypherQueryService {
         graphCypherQueryRepository.deleteById(id);
     }
 }
+

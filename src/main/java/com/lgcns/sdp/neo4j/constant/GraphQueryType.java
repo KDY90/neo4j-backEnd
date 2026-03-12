@@ -49,3 +49,4 @@ public enum GraphQueryType {
 
     private final String query;
 }
+

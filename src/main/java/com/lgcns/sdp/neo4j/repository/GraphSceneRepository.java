@@ -15,3 +15,4 @@ public interface GraphSceneRepository extends JpaRepository<GraphScene, Long>{
     Optional<GraphScene> findTopByOrderByIdDesc();
 
 }
+

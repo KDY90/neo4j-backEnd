@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Map;
 
 @Entity
@@ -44,12 +45,12 @@ public class GraphStyle {
     @Comment("생성일시")
     @CreationTimestamp
     @Column(name = "create_timestamp", updatable = false)
-    private LocalDateTime createTimestamp;
+    private OffsetDateTime createTimestamp;
 
     @Comment("수정일시")
     @UpdateTimestamp
     @Column(name = "update_timestamp")
-    private LocalDateTime updateTimestamp;
+    private OffsetDateTime updateTimestamp;
 
     public void updateStyleConfig(Map<String, Object> newConfig) {
         if (newConfig == null || newConfig.isEmpty()) {
