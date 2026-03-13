@@ -1,23 +1,24 @@
 package com.lgcns.sdp.neo4j.controller;
 
 import com.lgcns.sdp.neo4j.dto.GraphCypherQueryDto;
-import com.lgcns.sdp.neo4j.dto.GraphSchemaDto;
 import com.lgcns.sdp.neo4j.service.GraphCypherQueryService;
+import com.lgcns.sdp.neo4j.support.BaseResponse;
+import com.lgcns.sdp.neo4j.support.BaseRestControllerV2;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.async.DeferredResult;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/graph-cypher-query")
 @RequiredArgsConstructor
-public class GraphCypherQueryController {
+public class GraphCypherQueryController extends BaseRestControllerV2 {
 
     private final GraphCypherQueryService graphCypherQueryService;
 
@@ -30,9 +31,9 @@ public class GraphCypherQueryController {
     }
     )
 
-    public ResponseEntity<List<GraphCypherQueryDto>> getAllQueries(
+    public DeferredResult<BaseResponse<List<GraphCypherQueryDto>>> getAllQueries(
             @RequestParam(required = false) String queryType) {
-        return ResponseEntity.ok(graphCypherQueryService.getAllQueries(queryType));
+        return deferShortTimeDb(() -> BaseResponse.success(graphCypherQueryService.getAllQueries(queryType)));
     }
 
     @GetMapping("/valid")
@@ -43,9 +44,9 @@ public class GraphCypherQueryController {
                     content = @Content(schema = @Schema(implementation = GraphCypherQueryDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<List<GraphCypherQueryDto>> getValidQueries(
+    public DeferredResult<BaseResponse<List<GraphCypherQueryDto>>> getValidQueries(
             @RequestParam(required = false) String queryType) {
-        return ResponseEntity.ok(graphCypherQueryService.getValidQueries(queryType));
+        return deferShortTimeDb(() -> BaseResponse.success(graphCypherQueryService.getValidQueries(queryType)));
     }
 
     @GetMapping("/{id}")
@@ -56,8 +57,8 @@ public class GraphCypherQueryController {
                     content = @Content(schema = @Schema(implementation = GraphCypherQueryDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphCypherQueryDto> getQueryById(@PathVariable Long id) {
-        return ResponseEntity.ok(graphCypherQueryService.getQueryById(id));
+    public DeferredResult<BaseResponse<GraphCypherQueryDto>> getQueryById(@PathVariable Long id) {
+        return deferShortTimeDb(() -> BaseResponse.success(graphCypherQueryService.getQueryById(id)));
     }
 
     @PostMapping
@@ -68,8 +69,8 @@ public class GraphCypherQueryController {
                     content = @Content(schema = @Schema(implementation = GraphCypherQueryDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphCypherQueryDto> createQuery(@RequestBody GraphCypherQueryDto dto) {
-        return ResponseEntity.ok(graphCypherQueryService.createQuery(dto));
+    public DeferredResult<BaseResponse<GraphCypherQueryDto>> createQuery(@RequestBody GraphCypherQueryDto dto) {
+        return deferShortTimeDb(() -> BaseResponse.success(graphCypherQueryService.createQuery(dto)));
     }
 
     @PutMapping("/{id}")
@@ -80,9 +81,9 @@ public class GraphCypherQueryController {
                     content = @Content(schema = @Schema(implementation = GraphCypherQueryDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphCypherQueryDto> updateQuery(@PathVariable Long id,
+    public DeferredResult<BaseResponse<GraphCypherQueryDto>> updateQuery(@PathVariable Long id,
             @RequestBody GraphCypherQueryDto dto) {
-        return ResponseEntity.ok(graphCypherQueryService.updateQuery(id, dto));
+        return deferShortTimeDb(() -> BaseResponse.success(graphCypherQueryService.updateQuery(id, dto)));
     }
 
     @DeleteMapping("/{id}")
@@ -93,9 +94,11 @@ public class GraphCypherQueryController {
                     content = @Content(schema = @Schema(implementation = GraphCypherQueryDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<Void> deleteQuery(@PathVariable Long id) {
-        graphCypherQueryService.deleteQuery(id);
-        return ResponseEntity.ok().build();
+    public DeferredResult<BaseResponse<Void>> deleteQuery(@PathVariable Long id) {
+        return deferShortTimeDb(() -> {
+            graphCypherQueryService.deleteQuery(id);
+            return BaseResponse.success();
+        });
     }
 }
 

@@ -2,6 +2,8 @@ package com.lgcns.sdp.neo4j.controller;
 
 import com.lgcns.sdp.neo4j.dto.*;
 import com.lgcns.sdp.neo4j.service.GenericNodeService;
+import com.lgcns.sdp.neo4j.support.BaseResponse;
+import com.lgcns.sdp.neo4j.support.BaseRestControllerV2;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -9,8 +11,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.async.DeferredResult;
 
 import java.util.Collection;
 import java.util.Map;
@@ -18,7 +20,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/nodes")
 @RequiredArgsConstructor
-public class GenericNodeController {
+public class GenericNodeController extends BaseRestControllerV2 {
 
     private final GenericNodeService genericNodeService;
 
@@ -29,8 +31,8 @@ public class GenericNodeController {
                     description = "Get results from server")
     }
     )
-    public ResponseEntity<Collection<Map<String, Object>>> getNodesByLabel(@PathVariable String label) {
-        return ResponseEntity.ok(genericNodeService.findAllByLabel(label));
+    public DeferredResult<BaseResponse<Collection<Map<String, Object>>>> getNodesByLabel(@PathVariable String label) {
+        return deferShortTimeDb(() -> BaseResponse.success(genericNodeService.findAllByLabel(label)));
     }
 
     @PostMapping("/table")
@@ -41,8 +43,8 @@ public class GenericNodeController {
                     content = @Content(schema = @Schema(implementation = GraphLabelNodesResponseDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphLabelNodesResponseDto> getNodesByLabelForTable(@RequestBody GraphLabelNodesRequestDto requestDto) {
-        return ResponseEntity.ok(genericNodeService.getNodesByLabelForTable(requestDto));
+    public DeferredResult<BaseResponse<GraphLabelNodesResponseDto>> getNodesByLabelForTable(@RequestBody GraphLabelNodesRequestDto requestDto) {
+        return deferShortTimeDb(() -> BaseResponse.success(genericNodeService.getNodesByLabelForTable(requestDto)));
     }
 
     @GetMapping("/{elementId}/children")
@@ -53,8 +55,8 @@ public class GenericNodeController {
                     content = @Content(schema = @Schema(implementation = GraphNodeChildrenResponseDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphNodeChildrenResponseDto> getChildren(@PathVariable String elementId) {
-        return ResponseEntity.ok(genericNodeService.getChildrenNodes(elementId));
+    public DeferredResult<BaseResponse<GraphNodeChildrenResponseDto>> getChildren(@PathVariable String elementId) {
+        return deferShortTimeDb(() -> BaseResponse.success(genericNodeService.getChildrenNodes(elementId)));
     }
 
     @PostMapping("/create")
@@ -65,9 +67,8 @@ public class GenericNodeController {
                     content = @Content(schema = @Schema(implementation = GraphCreateNodeResponseDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphCreateNodeResponseDto> createNode(@RequestBody GraphCreateNodeRequestDto requestDto) {
-        GraphCreateNodeResponseDto response = genericNodeService.createNode(requestDto);
-        return ResponseEntity.ok(response);
+    public DeferredResult<BaseResponse<GraphCreateNodeResponseDto>> createNode(@RequestBody GraphCreateNodeRequestDto requestDto) {
+        return deferShortTimeDb(() -> BaseResponse.success(genericNodeService.createNode(requestDto)));
     }
 
     @PutMapping("/{id}")
@@ -78,10 +79,9 @@ public class GenericNodeController {
                     content = @Content(schema = @Schema(implementation = GraphCreateNodeResponseDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphCreateNodeResponseDto> updateNode(@PathVariable String id,
+    public DeferredResult<BaseResponse<GraphCreateNodeResponseDto>> updateNode(@PathVariable String id,
                                                                  @RequestBody GraphUpdateNodeRequestDto requestDto) {
-        GraphCreateNodeResponseDto response = genericNodeService.updateNode(id, requestDto);
-        return ResponseEntity.ok(response);
+        return deferShortTimeDb(() -> BaseResponse.success(genericNodeService.updateNode(id, requestDto)));
     }
 
     @DeleteMapping("/{id}")
@@ -91,9 +91,11 @@ public class GenericNodeController {
                     description = "Get results from server")
     }
     )
-    public ResponseEntity<Void> deleteNode(@PathVariable String id) {
-        genericNodeService.deleteNode(id);
-        return ResponseEntity.noContent().build();
+    public DeferredResult<BaseResponse<Void>> deleteNode(@PathVariable String id) {
+        return deferShortTimeDb(() -> {
+            genericNodeService.deleteNode(id);
+            return BaseResponse.success();
+        });
     }
 }
 

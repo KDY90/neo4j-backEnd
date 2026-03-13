@@ -1,23 +1,24 @@
 package com.lgcns.sdp.neo4j.controller;
 
 import com.lgcns.sdp.neo4j.dto.GraphSceneDto;
-import com.lgcns.sdp.neo4j.dto.GraphStyleRequestDto;
 import com.lgcns.sdp.neo4j.service.GraphSceneService;
+import com.lgcns.sdp.neo4j.support.BaseResponse;
+import com.lgcns.sdp.neo4j.support.BaseRestControllerV2;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.async.DeferredResult;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/graph-scene")
 @RequiredArgsConstructor
-public class GraphSceneController {
+public class GraphSceneController extends BaseRestControllerV2 {
 
     private final GraphSceneService graphSceneService;
 
@@ -29,8 +30,8 @@ public class GraphSceneController {
                     content = @Content(schema = @Schema(implementation = GraphSceneDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<List<GraphSceneDto>> getAllScenes() {
-        return ResponseEntity.ok(graphSceneService.getAllScenes());
+    public DeferredResult<BaseResponse<List<GraphSceneDto>>> getAllScenes() {
+        return deferShortTimeDb(() -> BaseResponse.success(graphSceneService.getAllScenes()));
     }
 
     @GetMapping("/{id}")
@@ -41,8 +42,8 @@ public class GraphSceneController {
                     content = @Content(schema = @Schema(implementation = GraphSceneDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphSceneDto> getSceneById(@PathVariable Long id) {
-        return ResponseEntity.ok(graphSceneService.getSceneById(id));
+    public DeferredResult<BaseResponse<GraphSceneDto>> getSceneById(@PathVariable Long id) {
+        return deferShortTimeDb(() -> BaseResponse.success(graphSceneService.getSceneById(id)));
     }
 
     @PostMapping
@@ -53,8 +54,8 @@ public class GraphSceneController {
                     content = @Content(schema = @Schema(implementation = GraphSceneDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphSceneDto> createScene(@RequestBody GraphSceneDto dto) {
-        return ResponseEntity.ok(graphSceneService.createScene(dto));
+    public DeferredResult<BaseResponse<GraphSceneDto>> createScene(@RequestBody GraphSceneDto dto) {
+        return deferShortTimeDb(() -> BaseResponse.success(graphSceneService.createScene(dto)));
     }
 
     @PutMapping("/{id}")
@@ -65,8 +66,8 @@ public class GraphSceneController {
                     content = @Content(schema = @Schema(implementation = GraphSceneDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphSceneDto> updateScene(@PathVariable Long id, @RequestBody GraphSceneDto dto) {
-        return ResponseEntity.ok(graphSceneService.updateScene(id, dto));
+    public DeferredResult<BaseResponse<GraphSceneDto>> updateScene(@PathVariable Long id, @RequestBody GraphSceneDto dto) {
+        return deferShortTimeDb(() -> BaseResponse.success(graphSceneService.updateScene(id, dto)));
     }
 
     @DeleteMapping("/{id}")
@@ -76,9 +77,11 @@ public class GraphSceneController {
                     description = "Get results from server")
     }
     )
-    public ResponseEntity<Void> deleteScene(@PathVariable Long id) {
-        graphSceneService.deleteScene(id);
-        return ResponseEntity.ok().build();
+    public DeferredResult<BaseResponse<Void>> deleteScene(@PathVariable Long id) {
+        return deferShortTimeDb(() -> {
+            graphSceneService.deleteScene(id);
+            return BaseResponse.success();
+        });
     }
 }
 

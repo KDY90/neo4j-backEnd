@@ -1,25 +1,26 @@
 package com.lgcns.sdp.neo4j.controller;
 
-import com.lgcns.sdp.neo4j.dto.GraphDetailDto;
 import com.lgcns.sdp.neo4j.dto.GraphStyleRequestDto;
 import com.lgcns.sdp.neo4j.entity.GraphStyle;
 import com.lgcns.sdp.neo4j.service.GraphStyleService;
+import com.lgcns.sdp.neo4j.support.BaseResponse;
+import com.lgcns.sdp.neo4j.support.BaseRestControllerV2;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.DeferredResult;
 
 @RestController
 @RequestMapping("/api/v1/graph/style")
 @RequiredArgsConstructor
-public class GraphStyleController {
+public class GraphStyleController extends BaseRestControllerV2 {
 
     private final GraphStyleService graphStyleService;
 
@@ -31,8 +32,7 @@ public class GraphStyleController {
                     content = @Content(schema = @Schema(implementation = GraphStyleRequestDto.class), mediaType = "application/json"))
     }
     )
-    public ResponseEntity<GraphStyle> saveGraphStyle(@RequestBody GraphStyleRequestDto requestDto) {
-        GraphStyle savedStyle = graphStyleService.saveStyle(requestDto);
-        return ResponseEntity.ok(savedStyle);
+    public DeferredResult<BaseResponse<GraphStyle>> saveGraphStyle(@RequestBody GraphStyleRequestDto requestDto) {
+        return deferShortTimeDb(() -> BaseResponse.success(graphStyleService.saveStyle(requestDto)));
     }
 }
