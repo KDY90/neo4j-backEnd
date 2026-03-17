@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -139,18 +140,19 @@ public class GraphCommonController extends BaseRestControllerV2 {
     }
 
     @PostMapping("/node/{elementId}/neighbors/batch")
-    @Operation(description = "노드의 관련 노드,릴레이션 조회 (모달)")
+    @Operation(description = "노드의 관련 노드,릴레이션 조회")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
                     description = "Get results from server",
                     content = @Content(schema = @Schema(implementation = GraphDetailDto.class), mediaType = "application/json"))
-    }
-    )
+    })
     public DeferredResult<BaseResponse<GraphDetailDto>> getSpecificNodeNeighborsBatch(
             @PathVariable String elementId,
             @RequestParam(required = false) Integer limit,
-            @RequestBody List<GraphExpansionCriteriaDto> criteriaList
+            @RequestBody Map<String, GraphExpansionCriteriaDto> criteriaMap
     ) {
+        List<GraphExpansionCriteriaDto> criteriaList = new ArrayList<>(criteriaMap.values());
+
         return deferShortTimeDb(() -> BaseResponse.success(
                 graphCommonService.findSpecificNodeNeighborsBatch(elementId, criteriaList, limit)
         ));
