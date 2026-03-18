@@ -35,7 +35,6 @@ public class GraphSearchService {
                     .build();
         }
 
-
         Optional<CypherBlock> savedQueryBlock = cyphers.stream()
                 .filter(block -> "SAVED_QUERY".equals(block.getType()))
                 .findFirst();
@@ -44,11 +43,8 @@ public class GraphSearchService {
             return executeSavedQuery(savedQueryBlock.get(), limit);
         }
 
-
         List<Condition> whereConditions = new ArrayList<>();
-
         CypherBlock firstBlock = cyphers.get(0);
-
         Node rootNode = createDslNode(firstBlock, 0);
 
         collectConditions(rootNode, firstBlock, whereConditions, requestDto.isCaseInsensitiveSearch());
@@ -62,11 +58,9 @@ public class GraphSearchService {
             CypherBlock nextNodeBlock = cyphers.get(i + 1);
 
             Node nextNode = createDslNode(nextNodeBlock, i + 1);
-
             currentPath = extendPath(currentPath, nextNode, relBlock, i);
 
             String relName = "r" + i;
-
             Relationship relProxy = Cypher.anyNode()
                     .relationshipTo(Cypher.anyNode(), relBlock.getLabel())
                     .named(relName);
@@ -76,11 +70,11 @@ public class GraphSearchService {
         }
 
         PatternElement finalPattern = (PatternElement) currentPath;
-
         Condition finalCondition = whereConditions.stream()
                 .reduce(Condition::and)
                 .orElse(Cypher.noCondition());
 
+        // 1. 실제 데이터를 가져오는 메인 쿼리 (LIMIT 포함)
         Statement statement = Cypher.match(Cypher.path("p").definedBy(finalPattern))
                 .where(finalCondition)
                 .returning(Cypher.name("p"))
@@ -88,14 +82,32 @@ public class GraphSearchService {
                 .build();
 
         String queryString = Renderer.getDefaultRenderer().render(statement);
-
-
         Collection<Map<String, Object>> queryResult = neo4jClient.query(queryString)
                 .bindAll(statement.getCatalog().getParameters())
                 .fetch()
                 .all();
 
-        return convertToGroupData(queryResult, cyphers);
+        // 2. 검색 패턴에 일치하는 정확한 개수들을 구하는 카운트 쿼리 (LIMIT 없음)
+        // ex) RETURN count(DISTINCT n0) AS count_0, count(DISTINCT r1) AS count_1, count(DISTINCT n2) AS count_2
+        List<Expression> countExpressions = new ArrayList<>();
+        for (int i = 0; i < cyphers.size(); i++) {
+            String varName = (i % 2 == 0) ? "n" + i : "r" + i;
+            countExpressions.add(Cypher.countDistinct(Cypher.name(varName)).as("count_" + i));
+        }
+
+        Statement countStatement = Cypher.match(finalPattern)
+                .where(finalCondition)
+                .returning(countExpressions.toArray(new Expression[0]))
+                .build();
+
+        String countQueryString = Renderer.getDefaultRenderer().render(countStatement);
+        Map<String, Object> countResult = neo4jClient.query(countQueryString)
+                .bindAll(countStatement.getCatalog().getParameters())
+                .fetch()
+                .one()
+                .orElse(Collections.emptyMap());
+
+        return convertToGroupData(queryResult, cyphers, countResult);
     }
 
     private GraphSearchResponseDto executeSavedQuery(CypherBlock block, int limit) {
@@ -120,16 +132,14 @@ public class GraphSearchService {
                 .fetch()
                 .all();
 
-        return convertToGroupData(queryResult, null);
+        return convertToGroupData(queryResult, null, null);
     }
-
 
     private Node createDslNode(CypherBlock block, int index) {
         return "ANY".equals(block.getLabel())
                 ? Cypher.anyNode().named("n" + index)
                 : Cypher.node(block.getLabel()).named("n" + index);
     }
-
 
     private ExposesRelationships<?> extendPath(ExposesRelationships<?> from, Node to, CypherBlock block, int index) {
         String label = "ANY".equals(block.getLabel()) ? "" : block.getLabel();
@@ -178,7 +188,6 @@ public class GraphSearchService {
         if ("IS_NULL".equals(operator)) return property.isNull();
         if ("IS_NOT_NULL".equals(operator)) return property.isNotNull();
 
-
         if (caseInsensitive && value instanceof String strValue) {
             Expression propertyLower = Cypher.toLower(property);
             Expression valueLower = Cypher.literalOf(strValue.toLowerCase());
@@ -194,7 +203,6 @@ public class GraphSearchService {
             };
         }
 
-
         Expression valExpr = Cypher.literalOf(value);
         return switch (operator) {
             case "NOT_EQUALS" -> property.isNotEqualTo(valExpr);
@@ -207,7 +215,7 @@ public class GraphSearchService {
         };
     }
 
-    private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult, List<CypherBlock> cyphers) {
+    private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult, List<CypherBlock> cyphers, Map<String, Object> patternCountResult) {
         List<Map<String, Object>> nodeList = new ArrayList<>();
         List<Map<String, Object>> edgeList = new ArrayList<>();
 
@@ -227,21 +235,36 @@ public class GraphSearchService {
             }
         }
 
-        Set<String> foundNodeLabels = new HashSet<>();
-        for (Map<String, Object> node : nodeList) {
-            foundNodeLabels.add((String) node.getOrDefault("label", "Unknown"));
-        }
-
-        Set<String> foundRelTypes = new HashSet<>();
-        for (Map<String, Object> edge : edgeList) {
-            foundRelTypes.add((String) edge.getOrDefault("label", "Unknown"));
-        }
-
         enrichWithGlobalConnectivity(nodeList, cyphers);
 
         Map<String, Long> nodeCountMap = new HashMap<>();
         Map<String, Long> relationCountMap = new HashMap<>();
-        fetchDatabaseTotalCounts(foundNodeLabels, foundRelTypes, nodeCountMap, relationCountMap);
+
+        // 3. 앞에서 실행한 카운트 쿼리 결과를 기반으로 정확한 라벨별 개수 세팅
+        if (patternCountResult != null && cyphers != null) {
+            for (int i = 0; i < cyphers.size(); i++) {
+                CypherBlock block = cyphers.get(i);
+
+                long count = 0L;
+                Object countObj = patternCountResult.get("count_" + i);
+                if (countObj instanceof Number num) {
+                    count = num.longValue();
+                }
+
+                String label = block.getLabel();
+                if ("ANY".equals(label)) {
+                    label = (i % 2 == 0) ? "Total Nodes" : "Total Relations";
+                }
+
+                if (i % 2 == 0) {
+                    // 동일한 라벨이 중복 등장할 경우 개수를 합산 (Long::sum)
+                    nodeCountMap.merge(label, count, Long::sum);
+                } else {
+                    relationCountMap.merge(label, count, Long::sum);
+                }
+            }
+        }
+
         return GraphSearchResponseDto.builder()
                 .nodes(nodeList)
                 .relationships(edgeList)
@@ -260,8 +283,7 @@ public class GraphSearchService {
                                    Map<String, Map<String, Object>> dbStyleCache,
                                    Map<String, Object> globalNodeStyles,
                                    Map<String, Object> globalRelStyles,
-                                   Map<String, Map<String, Object>> nodeInfoMap
-    ) {
+                                   Map<String, Map<String, Object>> nodeInfoMap) {
         if (item == null) return;
 
         if (item instanceof org.neo4j.driver.types.Path path) {
@@ -283,9 +305,7 @@ public class GraphSearchService {
                              Set<String> visitedNodeIds,
                              Map<String, Map<String, Object>> dbStyleCache,
                              Map<String, Object> globalNodeStyles,
-                             Map<String, Map<String, Object>> nodeInfoMap
-    ) {
-
+                             Map<String, Map<String, Object>> nodeInfoMap) {
         String id = node.elementId();
         String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "Unknown";
         Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", dbStyleCache);
@@ -301,7 +321,6 @@ public class GraphSearchService {
             globalNodeStyles.put(label, style);
         }
 
-        // 라벨 생성 로직
         List<String> displayCaptions = new ArrayList<>();
         Map<String, Object> nodeProps = node.asMap();
 
@@ -338,9 +357,7 @@ public class GraphSearchService {
                                      Set<String> visitedEdgeIds,
                                      Map<String, Map<String, Object>> dbStyleCache,
                                      Map<String, Object> globalRelStyles,
-                                     Map<String, Map<String, Object>> nodeInfoMap
-    ) {
-
+                                     Map<String, Map<String, Object>> nodeInfoMap) {
         String id = rel.elementId();
         String label = rel.type();
         String sourceId = rel.startNodeElementId();
@@ -379,11 +396,9 @@ public class GraphSearchService {
     private void enrichWithGlobalConnectivity(List<Map<String, Object>> nodeList, List<CypherBlock> cyphers) {
         if (nodeList.isEmpty()) return;
 
-
         List<String> nodeIds = nodeList.stream()
                 .map(n -> String.valueOf(n.get("id")))
                 .toList();
-
 
         String statQuery = """
                     MATCH (n)-[r]-()
@@ -400,7 +415,6 @@ public class GraphSearchService {
                 .fetch()
                 .all();
 
-
         Map<String, List<Map<String, Object>>> statsMap = new HashMap<>();
 
         for (Map<String, Object> row : statsResults) {
@@ -408,7 +422,6 @@ public class GraphSearchService {
             String relation = (String) row.get("relation");
             String position = (String) row.get("position");
             long count = ((Number) row.get("count")).longValue();
-
 
             statsMap.putIfAbsent(id, new ArrayList<>());
 
@@ -419,7 +432,6 @@ public class GraphSearchService {
 
             statsMap.get(id).add(detailItem);
         }
-
 
         for (Map<String, Object> node : nodeList) {
             String id = String.valueOf(node.get("id"));
@@ -433,55 +445,4 @@ public class GraphSearchService {
             node.put("totalConnectCount", totalConnectCount);
         }
     }
-
-    private void fetchDatabaseTotalCounts(Set<String> nodeLabels, Set<String> relTypes,
-                                          Map<String, Long> nodeCountMap, Map<String, Long> relCountMap) {
-        if (nodeLabels.isEmpty() && relTypes.isEmpty()) return;
-
-        StringBuilder sb = new StringBuilder();
-        boolean first = true;
-
-        for (String label : nodeLabels) {
-            if ("Unknown".equals(label)) continue;
-            if (!first) sb.append(" UNION ALL ");
-            sb.append(String.format("CALL { MATCH (n:`%s`) RETURN count(n) AS c } RETURN '%s' AS name, 'NODE' AS type, c AS count", label, label));
-            first = false;
-        }
-
-        // 관계 카운트 쿼리
-        for (String type : relTypes) {
-            if ("Unknown".equals(type)) continue;
-            if (!first) sb.append(" UNION ALL ");
-            sb.append(String.format("CALL { MATCH ()-[r:`%s`]->() RETURN count(r) AS c } RETURN '%s' AS name, 'REL' AS type, c AS count", type, type));
-            first = false;
-        }
-
-        if (sb.length() == 0) return;
-
-        try {
-            Collection<Map<String, Object>> counts = neo4jClient.query(sb.toString()).fetch().all();
-
-            for (Map<String, Object> row : counts) {
-                String name = (String) row.get("name");
-                String type = (String) row.get("type");
-
-                Object countObj = row.get("count");
-                long count = 0L;
-                if (countObj instanceof Number num) {
-                    count = num.longValue();
-                } else if (countObj instanceof String str) {
-                    count = Long.parseLong(str);
-                }
-
-                if ("NODE".equals(type)) {
-                    nodeCountMap.put(name, count);
-                } else if ("REL".equals(type)) {
-                    relCountMap.put(name, count);
-                }
-            }
-        } catch (Exception e) {
-            log.error("Failed to fetch database total counts. Query: {}", sb.toString(), e);
-        }
-    }
-
 }
