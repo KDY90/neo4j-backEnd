@@ -11,7 +11,7 @@ import java.util.Map;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@Builder(toBuilder = true)
 public class GraphSceneDto {
 
     @Schema(title = "scene id", description = "씬 id")
@@ -24,13 +24,18 @@ public class GraphSceneDto {
     private Integer nodeCount;
     @Schema(title = "relCount", description = "릴레이션 갯수")
     private Integer relCount;
+
+    @Schema(title = "nodesCount", description = "조건에 매칭된 노드 라벨별 갯수")
+    private Map<String, Long> nodesCount;
+    @Schema(title = "relationsCount", description = "조건에 매칭된 릴레이션 타입별 갯수")
+    private Map<String, Long> relationsCount;
+
     @Schema(title = "sceneConfig", description = "sceneConfig JSON")
     private Map<String, Object> sceneConfig;
     @Schema(title = "createTimestamp", description = "생성일자")
     private OffsetDateTime createTimestamp;
     @Schema(title = "updateTimestamp", description = "수정일자")
     private OffsetDateTime updateTimestamp;
-
 
     public static GraphSceneDto fromEntity(GraphScene entity) {
         return GraphSceneDto.builder()
@@ -44,7 +49,6 @@ public class GraphSceneDto {
                 .updateTimestamp(entity.getUpdateTimestamp())
                 .build();
     }
-
 
     public GraphScene toEntity() {
         return GraphScene.builder()
