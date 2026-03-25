@@ -1,10 +1,11 @@
 spring:
+  profiles:
+    active: local
 
+  application:
+    name: empasy-graph-api
 
-  # 2. MariaDB 설정 (spring.datasource) -> ★ 위치 수정됨
-
-
-  # 3. JPA 설정 (MariaDB용)
+  # 3. JPA 설정 (MariaDB용 공통 설정)
   jpa:
     hibernate:
       ddl-auto: validate

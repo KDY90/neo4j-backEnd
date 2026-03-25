@@ -2,12 +2,12 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>com.lgcns.sdp</groupId>
-    <artifactId>neo4j-backend</artifactId>
+    <groupId>com.empasy.graph</groupId>
+    <artifactId>empasy-graph-api</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-    <name>Neo4j Backend Demo</name>
-    <description>Neo4j Backend Demo</description>
+    <name>Empasy Graph API</name>
+    <description>Empasy Graph API</description>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
