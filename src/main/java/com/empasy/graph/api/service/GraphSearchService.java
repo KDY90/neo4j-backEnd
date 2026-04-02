@@ -74,7 +74,6 @@ public class GraphSearchService {
                 .reduce(Condition::and)
                 .orElse(Cypher.noCondition());
 
-        // 1. 실제 데이터를 가져오는 메인 쿼리 (LIMIT 포함)
         Statement statement = Cypher.match(Cypher.path("p").definedBy(finalPattern))
                 .where(finalCondition)
                 .returning(Cypher.name("p"))
@@ -87,8 +86,6 @@ public class GraphSearchService {
                 .fetch()
                 .all();
 
-        // 2. 검색 패턴에 일치하는 정확한 개수들을 구하는 카운트 쿼리 (LIMIT 없음)
-        // ex) RETURN count(DISTINCT n0) AS count_0, count(DISTINCT r1) AS count_1, count(DISTINCT n2) AS count_2
         List<Expression> countExpressions = new ArrayList<>();
         for (int i = 0; i < cyphers.size(); i++) {
             String varName = (i % 2 == 0) ? "n" + i : "r" + i;
@@ -240,7 +237,6 @@ public class GraphSearchService {
         Map<String, Long> nodeCountMap = new HashMap<>();
         Map<String, Long> relationCountMap = new HashMap<>();
 
-        // 3. 앞에서 실행한 카운트 쿼리 결과를 기반으로 정확한 라벨별 개수 세팅
         if (patternCountResult != null && cyphers != null) {
             for (int i = 0; i < cyphers.size(); i++) {
                 CypherBlock block = cyphers.get(i);
@@ -261,6 +257,20 @@ public class GraphSearchService {
                     nodeCountMap.merge(label, count, Long::sum);
                 } else {
                     relationCountMap.merge(label, count, Long::sum);
+                }
+            }
+        } else {
+            for (Map<String, Object> node : nodeList) {
+                String nodeLabel = (String) node.get("label");
+                if (nodeLabel != null) {
+                    nodeCountMap.merge(nodeLabel, 1L, Long::sum);
+                }
+            }
+
+            for (Map<String, Object> edge : edgeList) {
+                String edgeLabel = (String) edge.get("label");
+                if (edgeLabel != null) {
+                    relationCountMap.merge(edgeLabel, 1L, Long::sum);
                 }
             }
         }

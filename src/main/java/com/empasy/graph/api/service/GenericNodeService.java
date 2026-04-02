@@ -12,7 +12,6 @@ import org.neo4j.cypherdsl.core.renderer.Renderer;
 import org.neo4j.driver.types.Node;
 import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.stereotype.Service;
-
 import java.util.*;
 
 @Service
@@ -37,26 +36,62 @@ public class GenericNodeService {
         int pageSize = requestDto.getPageSize();
         int skip = pageIndex * pageSize;
 
-        // Total Row Count Query using Cypher-DSL
-        org.neo4j.cypherdsl.core.Node n = Cypher.node(label).named("n");
-        Statement countStatement = Cypher.match(n)
-                .returning(Cypher.count(n).as("total"))
-                .build();
-        String countQuery = Renderer.getRenderer(Configuration.newConfig().withDialect(Dialect.NEO4J_5).build()).render(countStatement);
+        List<Map<String, Object>> blocks = requestDto.getCypherBlocks();
+
+        String countQuery;
+        String dataQuery;
+
+        // 1. cypherBlocks 배열이 전달되었을 때 (1개인 경우, 3개인 경우 모두 커버)
+        if (blocks != null && !blocks.isEmpty()) {
+            StringBuilder matchClause = new StringBuilder("MATCH ");
+            String targetVar = "n0"; // 기본 리턴 변수
+
+            for (int i = 0; i < blocks.size(); i++) {
+                Map<String, Object> block = blocks.get(i);
+                String type = (String) block.get("type");
+                String blockLabel = (String) block.get("label");
+
+                if ("NODE".equals(type) || i % 2 == 0) {
+                    matchClause.append("(n").append(i);
+                    if (blockLabel != null && !"ANY".equals(blockLabel)) {
+                        matchClause.append(":`").append(blockLabel).append("`");
+                    }
+                    matchClause.append(")");
+
+                    // 현재 루프의 노드 라벨이 테이블에서 조회하려는 주 라벨과 같으면 리턴 타겟으로 지정
+                    if (label.equals(blockLabel)) {
+                        targetVar = "n" + i;
+                    }
+                } else if ("RELATIONSHIP".equals(type) || i % 2 != 0) {
+                    String direction = (String) block.get("direction");
+                    String relTypeStr = (blockLabel != null && !"ANY".equals(blockLabel)) ? ":`" + blockLabel + "`" : "";
+
+                    if ("OUT".equalsIgnoreCase(direction)) {
+                        matchClause.append("-[r").append(i).append(relTypeStr).append("]->");
+                    } else if ("IN".equalsIgnoreCase(direction)) {
+                        matchClause.append("<-[r").append(i).append(relTypeStr).append("]-");
+                    } else {
+                        matchClause.append("-[r").append(i).append(relTypeStr).append("]-");
+                    }
+                }
+            }
+
+            countQuery = matchClause + " RETURN count(DISTINCT " + targetVar + ") AS total";
+
+            dataQuery = matchClause +
+                    " WITH DISTINCT " + targetVar + " AS root " +
+                    " RETURN root, exists((root)<-[]-()) AS hasChildren " +
+                    " SKIP " + skip + " LIMIT " + pageSize;
+
+        } else {
+            countQuery = "MATCH (n:`" + label + "`) RETURN count(n) AS total";
+            dataQuery = "MATCH (root:`" + label + "`) RETURN root, exists((root)<-[]-()) AS hasChildren SKIP " + skip + " LIMIT " + pageSize;
+        }
+
+        // 카운트 실행
         Long rowCount = neo4jClient.query(countQuery).fetchAs(Long.class).one().orElse(0L);
 
-        // Data Query using Cypher-DSL
-        org.neo4j.cypherdsl.core.Node root = Cypher.node(label).named("root");
-        Statement dataStatement = Cypher.match(root)
-                .returning(
-                        root.asExpression(),
-                        Cypher.exists(root.relationshipFrom(Cypher.anyNode())).as("hasChildren")
-                )
-                .skip(skip)
-                .limit(pageSize)
-                .build();
-        String dataQuery = Renderer.getRenderer(Configuration.newConfig().withDialect(Dialect.NEO4J_5).build()).render(dataStatement);
-
+        // 데이터 실행
         Collection<Map<String, Object>> rawResults = neo4jClient.query(dataQuery).fetch().all();
 
         List<Map<String, Object>> finalData = new ArrayList<>();

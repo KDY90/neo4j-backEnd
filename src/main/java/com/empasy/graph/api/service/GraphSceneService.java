@@ -37,7 +37,6 @@ public class GraphSceneService {
 
         GraphSceneDto dto = GraphSceneDto.fromEntity(entity);
 
-        // Neo4j에 쿼리를 던져서 상세 개수를 가져오는 로직 실행
         return enrichSceneWithExactCounts(dto);
     }
 
@@ -92,8 +91,37 @@ public class GraphSceneService {
         }
 
         try {
-            StringBuilder matchClause = new StringBuilder("MATCH ");
             Map<String, Object> firstBlock = blocks.get(0);
+
+            if ("SAVED_QUERY".equals(firstBlock.get("type"))) {
+                Map<String, Object> savedContent = (Map<String, Object>) firstBlock.get("savedQueryContent");
+                if (savedContent != null && savedContent.containsKey("cypherQuery")) {
+                    String rawQuery = (String) savedContent.get("cypherQuery");
+                    log.info("Scene Count Saved Query Executing: {}", rawQuery);
+
+                    java.util.Collection<Map<String, Object>> queryResult = neo4jClient.query(rawQuery)
+                            .fetch()
+                            .all();
+
+                    Map<String, Long> nodesMap = new HashMap<>();
+                    Map<String, Long> relsMap = new HashMap<>();
+                    java.util.Set<String> visitedNodes = new java.util.HashSet<>();
+                    java.util.Set<String> visitedRels = new java.util.HashSet<>();
+
+                    for (Map<String, Object> row : queryResult) {
+                        for (Object value : row.values()) {
+                            countGraphElements(value, nodesMap, relsMap, visitedNodes, visitedRels);
+                        }
+                    }
+
+                    return dto.toBuilder()
+                            .nodesCount(nodesMap)
+                            .relationsCount(relsMap)
+                            .build();
+                }
+            }
+
+            StringBuilder matchClause = new StringBuilder("MATCH ");
             String firstLabel = (String) firstBlock.get("label");
 
             matchClause.append("(n0");
@@ -171,6 +199,37 @@ public class GraphSceneService {
         } catch (Exception e) {
             log.error("Neo4j Scene 카운트 계산 중 에러 발생", e);
             return dto;
+        }
+    }
+
+    private void countGraphElements(Object item,
+                                    Map<String, Long> nodesMap,
+                                    Map<String, Long> relsMap,
+                                    java.util.Set<String> visitedNodes,
+                                    java.util.Set<String> visitedRels) {
+        if (item == null) return;
+
+        if (item instanceof org.neo4j.driver.types.Node node) {
+            String id = node.elementId();
+            if (!visitedNodes.contains(id)) {
+                visitedNodes.add(id);
+                String label = node.labels().iterator().hasNext() ? node.labels().iterator().next() : "Unknown";
+                nodesMap.merge(label, 1L, Long::sum);
+            }
+        } else if (item instanceof org.neo4j.driver.types.Relationship rel) {
+            String id = rel.elementId();
+            if (!visitedRels.contains(id)) {
+                visitedRels.add(id);
+                String type = rel.type();
+                relsMap.merge(type, 1L, Long::sum);
+            }
+        } else if (item instanceof org.neo4j.driver.types.Path path) {
+            path.nodes().forEach(n -> countGraphElements(n, nodesMap, relsMap, visitedNodes, visitedRels));
+            path.relationships().forEach(r -> countGraphElements(r, nodesMap, relsMap, visitedNodes, visitedRels));
+        } else if (item instanceof Iterable<?> list) {
+            for (Object subItem : list) {
+                countGraphElements(subItem, nodesMap, relsMap, visitedNodes, visitedRels);
+            }
         }
     }
 

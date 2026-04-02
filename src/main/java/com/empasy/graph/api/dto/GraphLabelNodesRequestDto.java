@@ -6,6 +6,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+import java.util.Map;
+
 @Getter
 @Builder
 @NoArgsConstructor
@@ -17,5 +20,7 @@ public class GraphLabelNodesRequestDto {
     private int pageIndex = 0;
     @Schema(title = "pageSize", description = "pageSize")
     private int pageSize = 10;
+    @Schema(title = "cypherBlocks", description = "관계 필터링 블록")
+    private List<Map<String, Object>> cypherBlocks;
 }
 
