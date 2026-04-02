@@ -140,21 +140,20 @@ public class GraphCommonController extends BaseRestControllerV2 {
     }
 
     @PostMapping("/node/{elementId}/neighbors/batch")
-    @Operation(description = "노드의 관련 노드,릴레이션 조회")
+    @Operation(description = "노드의 관련 노드,릴레이션 조회 (모달)")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
                     description = "Get results from server",
                     content = @Content(schema = @Schema(implementation = GraphDetailDto.class), mediaType = "application/json"))
-    })
+    }
+    )
     public DeferredResult<BaseResponse<GraphDetailDto>> getSpecificNodeNeighborsBatch(
             @PathVariable String elementId,
             @RequestParam(required = false) Integer limit,
-            @RequestBody Map<String, GraphExpansionCriteriaDto> criteriaMap
+            @RequestBody GetSpecificNodeNeighborsBatchDto requestDto
     ) {
-        List<GraphExpansionCriteriaDto> criteriaList = new ArrayList<>(criteriaMap.values());
-
         return deferShortTimeDb(() -> BaseResponse.success(
-                graphCommonService.findSpecificNodeNeighborsBatch(elementId, criteriaList, limit)
+                graphCommonService.findSpecificNodeNeighborsBatch(elementId, requestDto.getCriteriaList(), limit)
         ));
     }
 
