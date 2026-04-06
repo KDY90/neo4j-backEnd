@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface GraphCypherQueryRepository extends JpaRepository<GraphCypherQuery, Long> {
@@ -12,5 +13,6 @@ public interface GraphCypherQueryRepository extends JpaRepository<GraphCypherQue
     List<GraphCypherQuery> findByTitleContaining(String keyword);
 
     List<GraphCypherQuery> findByQueryType(String queryType);
-}
 
+    Optional<GraphCypherQuery> findByIdAndQueryType(Long id, String queryType);
+}

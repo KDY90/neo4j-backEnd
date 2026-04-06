@@ -3,6 +3,8 @@ package com.empasy.graph.api.service;
 import com.empasy.graph.api.dto.GraphSearchRequestDto;
 import com.empasy.graph.api.dto.GraphSearchRequestDto.CypherBlock;
 import com.empasy.graph.api.dto.GraphSearchResponseDto;
+import com.empasy.graph.api.entity.GraphCypherQuery;
+import com.empasy.graph.api.repository.GraphCypherQueryRepository;
 import com.empasy.graph.api.util.GraphUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +24,7 @@ public class GraphSearchService {
 
     private final Neo4jClient neo4jClient;
     private final GraphUtil graphUtil;
+    private final GraphCypherQueryRepository graphCypherQueryRepository;
 
     @Transactional(readOnly = true)
     public GraphSearchResponseDto searchByCyphers(GraphSearchRequestDto requestDto) {
@@ -109,21 +112,44 @@ public class GraphSearchService {
 
     private GraphSearchResponseDto executeSavedQuery(CypherBlock block, int limit) {
         Map<String, Object> contentMap = block.getSavedQueryContent();
-        String rawQuery = "";
 
-        if (contentMap != null && contentMap.containsKey("cypherQuery")) {
-            rawQuery = (String) contentMap.get("cypherQuery");
+        if (contentMap == null || !contentMap.containsKey("id")) {
+            throw new IllegalArgumentException("저장된 쿼리의 ID(PK)가 없습니다.");
         }
 
+        Long queryId = ((Number) contentMap.get("id")).longValue();
+
+        String queryType = "cypher";
+        if (contentMap.containsKey("queryType") && contentMap.get("queryType") != null) {
+            queryType = String.valueOf(contentMap.get("queryType")).trim();
+        }
+
+        GraphCypherQuery cypherQueryEntity = graphCypherQueryRepository.findByIdAndQueryType(queryId, queryType)
+                .orElseThrow(() -> new IllegalArgumentException("해당 ID와 일치하는 쿼리를 찾을 수 없습니다: " + queryId));
+
+        String rawQuery = cypherQueryEntity.getCypherQuery();
+
         if (rawQuery == null || rawQuery.trim().isEmpty()) {
-            throw new IllegalArgumentException("저장된 쿼리 내용이 없습니다.");
+            throw new IllegalArgumentException("조회된 쿼리 내용이 없습니다.");
+        }
+
+        if (contentMap.containsKey("inputValue") && contentMap.get("inputValue") != null) {
+            String inputValue = String.valueOf(contentMap.get("inputValue")).trim();
+
+            if (!inputValue.isEmpty()) {
+                boolean isNumeric = inputValue.matches("-?\\d+(\\.\\d+)?");
+
+                boolean isArray = inputValue.startsWith("[") && inputValue.endsWith("]");
+
+                String replacementValue = (isNumeric || isArray) ? inputValue : "\"" + inputValue + "\"";
+
+                rawQuery = rawQuery.replaceAll("\\$\\w+", replacementValue);
+            }
         }
 
         if (limit > 0 && !rawQuery.toLowerCase().contains("limit")) {
             rawQuery += " LIMIT " + limit;
         }
-
-        log.info("Executing Saved Query: {}", rawQuery);
 
         Collection<Map<String, Object>> queryResult = neo4jClient.query(rawQuery)
                 .fetch()
