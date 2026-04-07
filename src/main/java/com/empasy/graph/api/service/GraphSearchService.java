@@ -16,6 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.Set;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 
 @Slf4j
 @Service
@@ -198,18 +202,30 @@ public class GraphSearchService {
             Property property = container.property(key);
             String operator = "EQUALS";
             Object value = val;
+            String type = "String"; // 기본 타입
 
             if (val instanceof Map<?, ?> valMap) {
                 if (valMap.containsKey("value")) value = valMap.get("value");
                 if (valMap.containsKey("operator")) operator = (String) valMap.get("operator");
+
+                if (valMap.containsKey("type") && valMap.get("type") != null) {
+                    type = (String) valMap.get("type");
+                }
             }
-            conditions.add(buildCondition(property, operator, value, caseInsensitive));
+
+            Object castedValue = castValueToType(value, type);
+
+            conditions.add(buildCondition(property, operator, castedValue, caseInsensitive));
         });
     }
 
     private Condition buildCondition(Property property, String operator, Object value, boolean caseInsensitive) {
         if ("IS_NULL".equals(operator)) return property.isNull();
         if ("IS_NOT_NULL".equals(operator)) return property.isNotNull();
+
+        if ("IN_ARRAY".equals(operator)) {
+            return Cypher.literalOf(value).in(property);
+        }
 
         if (caseInsensitive && value instanceof String strValue) {
             Expression propertyLower = Cypher.toLower(property);
@@ -220,8 +236,10 @@ public class GraphSearchService {
                 case "CONTAINS" -> propertyLower.contains(valueLower);
                 case "STARTS_WITH" -> propertyLower.startsWith(valueLower);
                 case "ENDS_WITH" -> propertyLower.endsWith(valueLower);
-                case "GREATER_THAN" -> propertyLower.gt(valueLower);
-                case "LESS_THAN" -> propertyLower.lt(valueLower);
+                case "GREATER_THAN", "AFTER" -> propertyLower.gt(valueLower);
+                case "LESS_THAN", "BEFORE" -> propertyLower.lt(valueLower);
+                case "GREATER_THAN_OR_EQUAL" -> propertyLower.gte(valueLower);
+                case "LESS_THAN_OR_EQUAL" -> propertyLower.lte(valueLower);
                 default -> propertyLower.isEqualTo(valueLower);
             };
         }
@@ -229,8 +247,11 @@ public class GraphSearchService {
         Expression valExpr = Cypher.literalOf(value);
         return switch (operator) {
             case "NOT_EQUALS" -> property.isNotEqualTo(valExpr);
-            case "GREATER_THAN" -> property.gt(valExpr);
-            case "LESS_THAN" -> property.lt(valExpr);
+            case "GREATER_THAN", "AFTER" -> property.gt(valExpr);
+            case "LESS_THAN", "BEFORE" -> property.lt(valExpr);
+            case "GREATER_THAN_OR_EQUAL" -> property.gte(valExpr);
+            case "LESS_THAN_OR_EQUAL" -> property.lte(valExpr);
+
             case "CONTAINS" -> property.contains(valExpr);
             case "STARTS_WITH" -> property.startsWith(valExpr);
             case "ENDS_WITH" -> property.endsWith(valExpr);
@@ -276,10 +297,27 @@ public class GraphSearchService {
                 String label = block.getLabel();
                 if ("ANY".equals(label)) {
                     label = (i % 2 == 0) ? "Total Nodes" : "Total Relations";
+                } else {
+                    if (i % 2 == 0) {
+                        String targetLabel = label;
+                        boolean hasMatchedLabel = nodeList.stream()
+                                .anyMatch(n -> targetLabel.equals(n.get("label")));
+
+                        if (!hasMatchedLabel && !nodeList.isEmpty()) {
+                            label = (String) nodeList.get(0).get("label");
+                        }
+                    } else {
+                        String targetLabel = label;
+                        boolean hasMatchedLabel = edgeList.stream()
+                                .anyMatch(e -> targetLabel.equals(e.get("label")));
+
+                        if (!hasMatchedLabel && !edgeList.isEmpty()) {
+                            label = (String) edgeList.get(0).get("label");
+                        }
+                    }
                 }
 
                 if (i % 2 == 0) {
-                    // 동일한 라벨이 중복 등장할 경우 개수를 합산 (Long::sum)
                     nodeCountMap.merge(label, count, Long::sum);
                 } else {
                     relationCountMap.merge(label, count, Long::sum);
@@ -481,4 +519,53 @@ public class GraphSearchService {
             node.put("totalConnectCount", totalConnectCount);
         }
     }
+
+    private Object castValueToType(Object value, String type) {
+        if (value == null || String.valueOf(value).trim().isEmpty()) {
+            return value;
+        }
+
+        String strValue = String.valueOf(value).trim();
+        String lowerType = type.toLowerCase().replace("_", "");
+
+        try {
+            if (lowerType.equals("integer") || lowerType.equals("long") || lowerType.equals("int")) {
+                return Long.valueOf(strValue);
+            } else if (lowerType.equals("float") || lowerType.equals("double")) {
+                return Double.valueOf(strValue);
+            } else if (lowerType.equals("boolean")) {
+                return Boolean.valueOf(strValue);
+            } else if (lowerType.contains("array") || lowerType.contains("list")) {
+                if (lowerType.contains("integer") || lowerType.contains("long")) {
+                    return Long.valueOf(strValue);
+                } else if (lowerType.contains("float") || lowerType.contains("double")) {
+                    return Double.valueOf(strValue);
+                }
+            }
+            else if (lowerType.equals("date") || lowerType.equals("localdate")) {
+                if (strValue.contains("T")) {
+                    strValue = strValue.split("T")[0];
+                }
+                return LocalDate.parse(strValue);
+            }
+            else if (lowerType.equals("datetime") || lowerType.equals("localdatetime")) {
+                if (!strValue.contains("T")) {
+                    strValue += "T00:00:00";
+                }
+
+                try {
+                    return OffsetDateTime.parse(strValue).toZonedDateTime();
+                } catch (DateTimeParseException e) {
+                    return LocalDateTime.parse(strValue);
+                }
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Value casting failed (NumberFormat) for value: '{}' and type: '{}'", strValue, type);
+        } catch (DateTimeParseException e) {
+            log.warn("Value casting failed (DateTimeFormat) for value: '{}' and type: '{}'", strValue, type);
+        }
+
+        return strValue;
+    }
+
 }
