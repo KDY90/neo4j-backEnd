@@ -1,5 +1,6 @@
 package com.empasy.graph.api.repository;
 
+import com.empasy.graph.api.annotation.Neo4jTransactional;
 import com.empasy.graph.api.constant.GraphQueryType;
 import com.empasy.graph.api.dto.*;
 import com.empasy.graph.api.util.GraphUtil;
@@ -25,7 +26,7 @@ public class GraphCommonRepository {
     private final GraphUtil graphUtil;
     private final org.neo4j.driver.Driver driver;
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public Collection<GraphSchemaDto> findSchemaInfo() {
         return neo4jClient.query(GraphQueryType.SCHEMA_INFO.getQuery())
                 .fetchAs(GraphSchemaDto.class).mappedBy((typeSystem, record) ->
@@ -42,7 +43,7 @@ public class GraphCommonRepository {
                 }).all();
     }
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public Collection<GraphLabelCountDto> getLabelCounts() {
         return neo4jClient.query(GraphQueryType.LABEL_COUNTS.getQuery())
                 .fetchAs(GraphLabelCountDto.class)
@@ -52,7 +53,7 @@ public class GraphCommonRepository {
                 .all();
     }
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public GraphSearchBarDto findSearchBarSchema() {
         return neo4jClient.query(GraphQueryType.SEARCH_BAR.getQuery())
                 .fetchAs(GraphSearchBarDto.class)
@@ -130,7 +131,7 @@ public class GraphCommonRepository {
                 .orElse(new GraphSearchBarDto(Collections.emptyList(), Collections.emptyList()));
     }
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public GraphDetailDto findNodeAndNeighbors(String elementId) {
         String query = """
                 MATCH (n)
@@ -147,7 +148,7 @@ public class GraphCommonRepository {
         return convertToGraphDetailDto(result);
     }
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public GraphDetailDto findSpecificNodeNeighbors(String elementId, String relation, String direction, String targetLabel) {
         String matchClause = "MATCH (n) WHERE elementId(n) = $elementId ";
         String optionalMatch = "";
@@ -178,7 +179,7 @@ public class GraphCommonRepository {
         return convertToGraphDetailDto(result);
     }
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList, Integer limit) {
 
         // 1. 공통으로 사용할 MATCH 및 WHERE 조건 생성
@@ -470,7 +471,7 @@ public class GraphCommonRepository {
         return result;
     }
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public Collection<Map<String, Object>> executeRawCypher(String cypherQuery) {
         String upperQuery = cypherQuery.toUpperCase().trim();
 
@@ -488,7 +489,7 @@ public class GraphCommonRepository {
                 .all();
     }
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public GraphExpansionStatsDto getNodeExpansionStats(String elementId, List<String> excludeRelIds) {
         List<String> excludes = (excludeRelIds == null) ? Collections.emptyList() : excludeRelIds;
 

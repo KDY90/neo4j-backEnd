@@ -1,5 +1,6 @@
 package com.empasy.graph.api.service;
 
+import com.empasy.graph.api.annotation.Neo4jTransactional;
 import com.empasy.graph.api.dto.GraphSearchRequestDto;
 import com.empasy.graph.api.dto.GraphSearchRequestDto.CypherBlock;
 import com.empasy.graph.api.dto.GraphSearchResponseDto;
@@ -24,13 +25,14 @@ import java.time.format.DateTimeParseException;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Neo4jTransactional(readOnly = true)
 public class GraphSearchService {
 
     private final Neo4jClient neo4jClient;
     private final GraphUtil graphUtil;
     private final GraphCypherQueryRepository graphCypherQueryRepository;
 
-    @Transactional(readOnly = true)
+    @Neo4jTransactional(readOnly = true)
     public GraphSearchResponseDto searchByCyphers(GraphSearchRequestDto requestDto) {
         List<CypherBlock> cyphers = requestDto.getCyphers();
         int limit = requestDto.getLimit();

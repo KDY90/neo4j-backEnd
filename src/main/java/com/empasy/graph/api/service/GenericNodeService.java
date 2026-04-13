@@ -1,5 +1,6 @@
 package com.empasy.graph.api.service;
 
+import com.empasy.graph.api.annotation.Neo4jTransactional;
 import com.empasy.graph.api.dto.*;
 import com.empasy.graph.api.util.GraphUtil;
 
@@ -16,6 +17,7 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Neo4jTransactional(readOnly = true)
 public class GenericNodeService {
 
     private final Neo4jClient neo4jClient;
@@ -154,6 +156,7 @@ public class GenericNodeService {
                 .build();
     }
 
+    @Neo4jTransactional
     public GraphCreateNodeResponseDto createNode(GraphCreateNodeRequestDto requestDto) {
         String label = requestDto.getLabel();
         Map<String, Object> properties = requestDto.getProperties();
@@ -192,6 +195,7 @@ public class GenericNodeService {
                 .orElseThrow(() -> new RuntimeException("Failed to create node"));
     }
 
+    @Neo4jTransactional
     public GraphCreateNodeResponseDto updateNode(String elementId, GraphUpdateNodeRequestDto requestDto) {
 
         requestDto.getProperties().remove("labels");
@@ -222,6 +226,7 @@ public class GenericNodeService {
                 .orElseThrow(() -> new RuntimeException("Failed to update node with id: " + elementId));
     }
 
+    @Neo4jTransactional
     public void deleteNode(String elementId) {
         String query = "MATCH (n) WHERE elementId(n) = $elementId DETACH DELETE n";
         neo4jClient.query(query)

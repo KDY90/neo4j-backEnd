@@ -1,5 +1,6 @@
 package com.empasy.graph.api.service;
 
+import com.empasy.graph.api.annotation.Neo4jTransactional;
 import com.empasy.graph.api.dto.*;
 import com.empasy.graph.api.repository.GraphCommonRepository;
 
@@ -12,6 +13,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Neo4jTransactional(readOnly = true)
 public class GraphCommonService {
 
     private final GraphCommonRepository graphCommonRepository;
