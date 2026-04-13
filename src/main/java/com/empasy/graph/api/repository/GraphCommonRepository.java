@@ -69,14 +69,42 @@ public class GraphCommonRepository {
                                 List<Value> propsVal = nodeVal.get("properties").asList(v -> v);
                                 List<GraphSearchBarDto.PropertySchema> propertySchemas = propsVal
                                         .stream()
-                                        .map(p -> new GraphSearchBarDto.PropertySchema(
-                                                p.get("key").asString(),
-                                                p.get("type").asString()))
+                                        .map(p -> {
+                                            String propKey = p.get("key").asString();
+                                            String rawType = p.get("type").asString();
+                                            String formattedType = rawType;
+
+                                            if (rawType != null) {
+                                                String lowerType = rawType.toLowerCase();
+
+                                                if (lowerType.contains("array")) {
+                                                    String innerType = rawType.replaceAll("(?i)array", "")
+                                                            .replaceAll("[^a-zA-Z]", "") // 대괄호 등 특수문자 제거
+                                                            .toUpperCase();
+                                                    formattedType = innerType.isEmpty() ? "LIST" : "LIST(" + innerType + ")";
+                                                }
+                                                else if (lowerType.contains("[]")) {
+                                                    String innerType = rawType.replace("[]", "").replaceAll("[^a-zA-Z]", "").toUpperCase();
+                                                    formattedType = innerType.isEmpty() ? "LIST" : "LIST(" + innerType + ")";
+                                                }
+                                                else if (lowerType.contains("list")) {
+                                                    String innerType = rawType.replaceAll("(?i)list of", "")
+                                                            .replaceAll("(?i)list", "")
+                                                            .replaceAll("[^a-zA-Z]", "")
+                                                            .toUpperCase();
+                                                    formattedType = innerType.isEmpty() ? "LIST" : "LIST(" + innerType + ")";
+                                                }
+                                            }
+
+                                            return new GraphSearchBarDto.PropertySchema(propKey, formattedType);
+                                        })
                                         .toList();
 
                                 Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
                                 return new GraphSearchBarDto.NodeSchema(label, propertySchemas, style);
-                            }).toList();
+                            })
+                            .sorted(Comparator.comparing(GraphSearchBarDto.NodeSchema::getLabel, String.CASE_INSENSITIVE_ORDER))
+                            .toList();
 
                     List<Value> relsList = schema.get("relationships").asList(v -> v);
                     List<GraphSearchBarDto.RelationshipSchema> relSchemas = relsList.stream()
@@ -93,6 +121,7 @@ public class GraphCommonRepository {
                                 Map<String, Object> style = graphUtil.getStyleConfig(relationshipName, "RELATIONSHIP", styleCache);
                                 return new GraphSearchBarDto.RelationshipSchema(relationshipName, connections, style);
                             })
+                             .sorted(Comparator.comparing(GraphSearchBarDto.RelationshipSchema::getRelationship, String.CASE_INSENSITIVE_ORDER))
                             .toList();
 
                     return new GraphSearchBarDto(nodeSchemas, relSchemas);
@@ -149,7 +178,6 @@ public class GraphCommonRepository {
         return convertToGraphDetailDto(result);
     }
 
-    // ⭐ 핵심 수정 부분: 노드 확장 시 실제 매칭된 연결 개수만 구하도록 변경
     @Transactional(readOnly = true)
     public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList, Integer limit) {
 
@@ -335,8 +363,20 @@ public class GraphCommonRepository {
             }
         }
 
+        Map<String, Object> sortedCenterNodeData = null;
+        if (centerNodeData != null) {
+            sortedCenterNodeData = centerNodeData.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
+                    .collect(java.util.stream.Collectors.toMap(
+                            Map.Entry::getKey,
+                            Map.Entry::getValue,
+                            (oldValue, newValue) -> oldValue,
+                            java.util.LinkedHashMap::new
+                    ));
+        }
+
         return GraphDetailDto.builder()
-                .centerNode(centerNodeData)
+                .centerNode(sortedCenterNodeData)
                 .nodes(new ArrayList<>(uniqueNodes.values()))
                 .relationships(new ArrayList<>(uniqueRels.values()))
                 .build();

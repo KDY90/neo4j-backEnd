@@ -213,15 +213,32 @@ public class GraphSearchService {
                 }
             }
 
-            Object castedValue = castValueToType(value, type);
+            Object castedValue;
+            if (type.toLowerCase().contains("list") && "CONTAINS".equals(operator)) {
+                String strVal = String.valueOf(value).trim();
+                if (type.toLowerCase().contains("long")) {
+                    try { castedValue = Long.valueOf(strVal); }
+                    catch (Exception e) { castedValue = strVal; }
+                } else {
+                    castedValue = strVal;
+                }
+            } else {
+                castedValue = castValueToType(value, type);
+            }
 
-            conditions.add(buildCondition(property, operator, castedValue, caseInsensitive));
+            conditions.add(buildCondition(property, operator, castedValue, type, caseInsensitive));
         });
     }
 
-    private Condition buildCondition(Property property, String operator, Object value, boolean caseInsensitive) {
+    private Condition buildCondition(Property property, String operator, Object value, String type, boolean caseInsensitive) {
         if ("IS_NULL".equals(operator)) return property.isNull();
         if ("IS_NOT_NULL".equals(operator)) return property.isNotNull();
+
+        boolean isListType = type != null && type.toLowerCase().contains("list");
+
+        if (isListType && "CONTAINS".equals(operator)) {
+            return Cypher.literalOf(value).in(property);
+        }
 
         if ("IN_ARRAY".equals(operator)) {
             return Cypher.literalOf(value).in(property);
@@ -535,12 +552,30 @@ public class GraphSearchService {
                 return Double.valueOf(strValue);
             } else if (lowerType.equals("boolean")) {
                 return Boolean.valueOf(strValue);
-            } else if (lowerType.contains("array") || lowerType.contains("list")) {
-                if (lowerType.contains("integer") || lowerType.contains("long")) {
-                    return Long.valueOf(strValue);
-                } else if (lowerType.contains("float") || lowerType.contains("double")) {
-                    return Double.valueOf(strValue);
+            } else if (lowerType.contains("list(string)")) {
+                String cleanValue = strValue;
+
+                if (cleanValue.startsWith("[") && cleanValue.endsWith("]")) {
+                    cleanValue = cleanValue.substring(1, cleanValue.length() - 1);
                 }
+
+                return Arrays.stream(cleanValue.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toList();
+            }
+            else if (lowerType.contains("list(long)")) {
+                String cleanValue = strValue;
+
+                if (cleanValue.startsWith("[") && cleanValue.endsWith("]")) {
+                    cleanValue = cleanValue.substring(1, cleanValue.length() - 1);
+                }
+
+                return Arrays.stream(cleanValue.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .map(Long::valueOf) // 핵심: 요소를 Long 타입으로 캐스팅
+                        .toList();
             }
             else if (lowerType.equals("date") || lowerType.equals("localdate")) {
                 if (strValue.contains("T")) {
