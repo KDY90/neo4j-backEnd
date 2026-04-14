@@ -4,7 +4,6 @@ import com.empasy.graph.api.annotation.Neo4jTransactional;
 import com.empasy.graph.api.constant.GraphQueryType;
 import com.empasy.graph.api.dto.*;
 import com.empasy.graph.api.util.GraphUtil;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Value;
@@ -13,7 +12,6 @@ import org.neo4j.driver.types.Node;
 import org.neo4j.driver.types.Relationship;
 import org.springframework.data.neo4j.core.Neo4jClient;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 
@@ -30,7 +28,6 @@ public class GraphCommonRepository {
     public Collection<GraphSchemaDto> findSchemaInfo() {
         return neo4jClient.query(GraphQueryType.SCHEMA_INFO.getQuery())
                 .fetchAs(GraphSchemaDto.class).mappedBy((typeSystem, record) ->
-
                 {
                     String label = record.get("label").asString();
                     List<Value> propsList = record.get("propsList").asList(v -> v);
@@ -122,7 +119,7 @@ public class GraphCommonRepository {
                                 Map<String, Object> style = graphUtil.getStyleConfig(relationshipName, "RELATIONSHIP", styleCache);
                                 return new GraphSearchBarDto.RelationshipSchema(relationshipName, connections, style);
                             })
-                             .sorted(Comparator.comparing(GraphSearchBarDto.RelationshipSchema::getRelationship, String.CASE_INSENSITIVE_ORDER))
+                            .sorted(Comparator.comparing(GraphSearchBarDto.RelationshipSchema::getRelationship, String.CASE_INSENSITIVE_ORDER))
                             .toList();
 
                     return new GraphSearchBarDto(nodeSchemas, relSchemas);
@@ -131,8 +128,10 @@ public class GraphCommonRepository {
                 .orElse(new GraphSearchBarDto(Collections.emptyList(), Collections.emptyList()));
     }
 
+
     @Neo4jTransactional(readOnly = true)
     public GraphDetailDto findNodeAndNeighbors(String elementId) {
+
         String query = """
                 MATCH (n)
                 WHERE elementId(n) = $elementId
@@ -145,15 +144,19 @@ public class GraphCommonRepository {
                 .fetch()
                 .all();
 
+
         return convertToGraphDetailDto(result);
     }
 
     @Neo4jTransactional(readOnly = true)
     public GraphDetailDto findSpecificNodeNeighbors(String elementId, String relation, String direction, String targetLabel) {
+
         String matchClause = "MATCH (n) WHERE elementId(n) = $elementId ";
-        String optionalMatch = "";
+        String optionalMatch;
+
 
         String relType = (relation != null && !relation.trim().isEmpty()) ? ":" + relation : "";
+
 
         String targetNodeStr = "(connectedNode";
         if (targetLabel != null && !targetLabel.trim().isEmpty()) {
@@ -161,11 +164,15 @@ public class GraphCommonRepository {
         }
         targetNodeStr += ")";
 
+
         if ("OUT".equalsIgnoreCase(direction)) {
+
             optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]->%s", relType, targetNodeStr);
         } else if ("IN".equalsIgnoreCase(direction)) {
+
             optionalMatch = String.format("OPTIONAL MATCH (n)<-[r%s]-%s", relType, targetNodeStr);
         } else {
+
             optionalMatch = String.format("OPTIONAL MATCH (n)-[r%s]-%s", relType, targetNodeStr);
         }
 
@@ -182,27 +189,29 @@ public class GraphCommonRepository {
     @Neo4jTransactional(readOnly = true)
     public GraphDetailDto findSpecificNodeNeighborsBatch(String elementId, List<GraphExpansionCriteriaDto> criteriaList, Integer limit) {
 
-        // 1. 공통으로 사용할 MATCH 및 WHERE 조건 생성
-        String baseQuery = """
-        MATCH (n) WHERE elementId(n) = $elementId
-        MATCH (n)-[r]-(connectedNode)
-        WHERE any(c IN $criteriaList WHERE
-            (c.relation IS NULL OR type(r) = c.relation)
-            AND
-            (c.targetLabel IS NULL OR c.targetLabel IN labels(connectedNode))
-            AND
-            (
-                c.direction = 'ALL' OR c.direction IS NULL OR
-                (c.direction = 'OUT' AND startNode(r) = n) OR
-                (c.direction = 'IN' AND endNode(r) = n)
-            )
-        )
-        """;
 
-        // 2. 실제 데이터를 가져오는 쿼리 (LIMIT 적용)
-        String dataQuery = baseQuery + "\nRETURN n, r, connectedNode";
+        String baseQuery = """
+                MATCH (n) WHERE elementId(n) = $elementId
+                MATCH (n)-[r]-(connectedNode)
+                
+                WHERE any(c IN $criteriaList WHERE
+                    (c.relation IS NULL OR type(r) = c.relation)
+                    AND
+                    (c.targetLabel IS NULL OR c.targetLabel IN labels(connectedNode))
+                    AND
+                    (
+                        c.direction = 'ALL' OR c.direction IS NULL OR
+                        (c.direction = 'OUT' AND startNode(r) = n) OR
+                        (c.direction = 'IN' AND endNode(r) = n)
+                    )
+                )
+                
+                RETURN n, r, connectedNode
+                """;
+
+        String finalQuery = baseQuery;
         if (limit != null && limit > 0) {
-            dataQuery += "\nLIMIT $limit";
+            finalQuery += " LIMIT $limit";
         }
 
         List<Map<String, Object>> mappedCriteria = criteriaList.stream().map(c -> {
@@ -213,61 +222,41 @@ public class GraphCommonRepository {
             return map;
         }).toList();
 
-        var dataRunner = neo4jClient.query(dataQuery)
+        var runner = neo4jClient.query(finalQuery)
                 .bind(elementId).to("elementId")
                 .bind(mappedCriteria).to("criteriaList");
 
         if (limit != null && limit > 0) {
-            dataRunner = dataRunner.bind(limit).to("limit");
+            runner = runner.bind(limit).to("limit");
         }
 
-        Collection<Map<String, Object>> result = dataRunner.fetch().all();
+        Collection<Map<String, Object>> result = runner.fetch().all();
+
+
         GraphDetailDto dto = convertToGraphDetailDto(result);
 
-        // 3. 조건에 완벽히 일치하는 알맹이 총 갯수 구하기 (LIMIT 없음)
-        String countQuery = baseQuery + """
-        WITH connectedNode
-        UNWIND labels(connectedNode) AS lbl
-        RETURN lbl AS name, 'NODE' AS type, count(DISTINCT connectedNode) AS count
-        UNION ALL
-        """ + baseQuery + """
-        RETURN type(r) AS name, 'REL' AS type, count(DISTINCT r) AS count
-        """;
 
-        Collection<Map<String, Object>> countResult = neo4jClient.query(countQuery)
-                .bind(elementId).to("elementId")
-                .bind(mappedCriteria).to("criteriaList")
-                .fetch().all();
+        Set<String> foundNodeLabels = new HashSet<>();
+        for (Map<String, Object> node : dto.getNodes()) {
+            if (node.containsKey("labels")) {
+                Iterable<String> labels = (Iterable<String>) node.get("labels");
+                if (labels.iterator().hasNext()) {
+                    foundNodeLabels.add(labels.iterator().next());
+                }
+            } else {
+                foundNodeLabels.add((String) node.getOrDefault("label", "Unknown"));
+            }
+        }
+
+        Set<String> foundRelTypes = new HashSet<>();
+        for (Map<String, Object> rel : dto.getRelationships()) {
+            foundRelTypes.add((String) rel.getOrDefault("label", "Unknown"));
+        }
 
         Map<String, Long> nodeCountMap = new HashMap<>();
         Map<String, Long> relationCountMap = new HashMap<>();
 
-        // 4. DB 전체가 아닌, 쿼리에서 가져온 '진짜 매칭된 갯수'만 Map에 담기
-        for (Map<String, Object> row : countResult) {
-            String name = (String) row.get("name");
-            String type = (String) row.get("type");
-            long count = ((Number) row.get("count")).longValue();
-
-            if ("NODE".equals(type)) {
-                nodeCountMap.put(name, count);
-            } else if ("REL".equals(type)) {
-                relationCountMap.put(name, count);
-            }
-        }
-
-        // 중심 노드(Center Node)도 화면에 보이므로 카운트에 +1 추가
-        if (dto.getCenterNode() != null) {
-            Object labelsObj = dto.getCenterNode().get("labels");
-            if (labelsObj instanceof Iterable<?> labels) {
-                for (Object lblObj : labels) {
-                    String lbl = String.valueOf(lblObj);
-                    nodeCountMap.put(lbl, nodeCountMap.getOrDefault(lbl, 0L) + 1);
-                }
-            } else {
-                String lbl = (String) dto.getCenterNode().getOrDefault("label", "Unknown");
-                nodeCountMap.put(lbl, nodeCountMap.getOrDefault(lbl, 0L) + 1);
-            }
-        }
+        fetchDatabaseTotalCounts(foundNodeLabels, foundRelTypes, nodeCountMap, relationCountMap);
 
         dto = dto.toBuilder()
                 .nodeCount(nodeCountMap)
@@ -282,24 +271,27 @@ public class GraphCommonRepository {
     private void enrichWithGlobalConnectivity(List<Map<String, Object>> nodeList) {
         if (nodeList == null || nodeList.isEmpty()) return;
 
+
         List<String> nodeIds = nodeList.stream()
                 .map(n -> String.valueOf(n.get("id")))
                 .toList();
 
+
         String statQuery = """
-            MATCH (n)-[r]-()
-            WHERE elementId(n) IN $nodeIds
-            RETURN 
-                elementId(n) as id, 
-                type(r) as relation,
-                CASE WHEN elementId(startNode(r)) = elementId(n) THEN 'TAIL' ELSE 'HEAD' END as position,
-                count(r) as count
-        """;
+                    MATCH (n)-[r]-()
+                    WHERE elementId(n) IN $nodeIds
+                    RETURN
+                        elementId(n) as id,
+                        type(r) as relation,
+                        CASE WHEN elementId(startNode(r)) = elementId(n) THEN 'TAIL' ELSE 'HEAD' END as position,
+                        count(r) as count
+                """;
 
         Collection<Map<String, Object>> statsResults = neo4jClient.query(statQuery)
                 .bindAll(Map.of("nodeIds", nodeIds))
                 .fetch()
                 .all();
+
 
         Map<String, List<Map<String, Object>>> statsMap = new HashMap<>();
 
@@ -319,6 +311,7 @@ public class GraphCommonRepository {
             statsMap.get(id).add(detailItem);
         }
 
+
         for (Map<String, Object> node : nodeList) {
             String id = String.valueOf(node.get("id"));
             List<Map<String, Object>> details = statsMap.getOrDefault(id, new ArrayList<>());
@@ -331,6 +324,7 @@ public class GraphCommonRepository {
             node.put("totalConnectCount", totalConnectCount);
         }
     }
+
 
     private GraphDetailDto convertToGraphDetailDto(Collection<Map<String, Object>> result) {
         Map<String, Map<String, Object>> uniqueNodes = new HashMap<>();
@@ -394,6 +388,7 @@ public class GraphCommonRepository {
         }
     }
 
+
     private Map<String, Object> mapNodeToMap(Entity node, Map<String, Map<String, Object>> styleCache) {
         Map<String, Object> map = new HashMap<>(node.asMap());
         map.put("id", node.elementId());
@@ -402,10 +397,12 @@ public class GraphCommonRepository {
             Node n = (Node) node;
             map.put("labels", n.labels());
 
+
             String label = "Node";
             if (n.labels().iterator().hasNext()) {
                 label = n.labels().iterator().next();
             }
+
 
             Map<String, Object> style = graphUtil.getStyleConfig(label, "NODE", styleCache);
             if (style != null) {
@@ -414,6 +411,7 @@ public class GraphCommonRepository {
         }
         return map;
     }
+
 
     private Map<String, Object> mapRelationshipToMap(Entity rel, Map<String, String> nodeIdToLabelMap,
                                                      Map<String, Map<String, Object>> styleCache) {
@@ -459,6 +457,7 @@ public class GraphCommonRepository {
         String explainQuery = "EXPLAIN " + cypherQuery;
         Map<String, Object> result = new HashMap<>();
 
+
         try (org.neo4j.driver.Session session = driver.session()) {
             session.run(explainQuery).consume();
             result.put("valid", true);
@@ -471,9 +470,13 @@ public class GraphCommonRepository {
         return result;
     }
 
+
     @Neo4jTransactional(readOnly = true)
     public Collection<Map<String, Object>> executeRawCypher(String cypherQuery) {
+
+
         String upperQuery = cypherQuery.toUpperCase().trim();
+
 
         if (upperQuery.contains("DELETE") ||
                 upperQuery.contains("DETACH") ||
@@ -484,6 +487,7 @@ public class GraphCommonRepository {
             throw new IllegalArgumentException("보안 경고: 데이터 변경 쿼리(DELETE, CREATE 등)는 실행할 수 없습니다.");
         }
 
+
         return neo4jClient.query(cypherQuery)
                 .fetch()
                 .all();
@@ -491,25 +495,26 @@ public class GraphCommonRepository {
 
     @Neo4jTransactional(readOnly = true)
     public GraphExpansionStatsDto getNodeExpansionStats(String elementId, List<String> excludeRelIds) {
+
+
         List<String> excludes = (excludeRelIds == null) ? Collections.emptyList() : excludeRelIds;
 
         String query = """
-            MATCH (n) WHERE elementId(n) = $elementId
-            MATCH (n)-[r]-(m)
-            // [핵심] 이미 화면에 있는 관계(ID)는 제외
-            WHERE NOT elementId(r) IN $excludeIds
-            
-            WITH 
-                type(r) as relType, 
-                labels(m) as targetLabels, 
-                startNode(r) = n as isOutgoing, 
-                count(m) as cnt
-            RETURN 
-                relType, 
-                targetLabels, 
-                CASE WHEN isOutgoing THEN 'OUT' ELSE 'IN' END as direction, 
-                cnt
-            """;
+                MATCH (n) WHERE elementId(n) = $elementId
+                MATCH (n)-[r]-(m)
+                WHERE NOT elementId(r) IN $excludeIds
+                
+                WITH
+                    type(r) as relType,
+                    labels(m) as targetLabels,
+                    startNode(r) = n as isOutgoing,
+                    count(m) as cnt
+                RETURN
+                    relType,
+                    targetLabels,
+                    CASE WHEN isOutgoing THEN 'OUT' ELSE 'IN' END as direction,
+                    cnt
+                """;
 
         Collection<Map<String, Object>> result = neo4jClient.query(query)
                 .bind(elementId).to("elementId")
@@ -521,6 +526,7 @@ public class GraphCommonRepository {
     }
 
     private GraphExpansionStatsDto convertToExpansionStatsDto(Collection<Map<String, Object>> result) {
+
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> relMap = new HashMap<>();
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> catMap = new HashMap<>();
         Map<String, GraphExpansionStatsDto.ExpansionItemDto> pairMap = new HashMap<>();
@@ -531,6 +537,7 @@ public class GraphCommonRepository {
             String targetLabel = labels.isEmpty() ? "Unknown" : labels.get(0);
             String direction = (String) row.get("direction");
             long count = ((Number) row.get("cnt")).longValue();
+
 
             String relKey = relType + "|" + direction;
             relMap.compute(relKey, (k, v) -> (v == null) ?
@@ -543,6 +550,7 @@ public class GraphCommonRepository {
                     v.toBuilder().count(v.getCount() + count).build()
             );
 
+
             String catKey = targetLabel;
             catMap.compute(catKey, (k, v) -> (v == null) ?
                     GraphExpansionStatsDto.ExpansionItemDto.builder()
@@ -552,6 +560,7 @@ public class GraphCommonRepository {
                             .build() :
                     v.toBuilder().count(v.getCount() + count).build()
             );
+
 
             String pairKey = relType + "|" + direction + "|" + targetLabel;
             pairMap.compute(pairKey, (k, v) -> (v == null) ?
@@ -566,9 +575,11 @@ public class GraphCommonRepository {
             );
         }
 
+
         List<GraphExpansionStatsDto.ExpansionItemDto> rels = new ArrayList<>(relMap.values());
         List<GraphExpansionStatsDto.ExpansionItemDto> cats = new ArrayList<>(catMap.values());
         List<GraphExpansionStatsDto.ExpansionItemDto> pairs = new ArrayList<>(pairMap.values());
+
 
         for (int i = 0; i < rels.size(); i++) rels.set(i, rels.get(i).toBuilder().id("rel-" + i).build());
         for (int i = 0; i < cats.size(); i++) cats.set(i, cats.get(i).toBuilder().id("cat-" + i).build());
@@ -580,4 +591,54 @@ public class GraphCommonRepository {
                 .pairs(pairs)
                 .build();
     }
+
+    private void fetchDatabaseTotalCounts(Set<String> nodeLabels, Set<String> relTypes,
+                                          Map<String, Long> nodeCountMap, Map<String, Long> relCountMap) {
+        if (nodeLabels.isEmpty() && relTypes.isEmpty()) return;
+
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+
+        for (String label : nodeLabels) {
+            if ("Unknown".equals(label)) continue;
+            if (!first) sb.append(" UNION ALL ");
+            sb.append(String.format("CALL { MATCH (n:`%s`) RETURN count(n) AS c } RETURN '%s' AS name, 'NODE' AS type, c AS count", label, label));
+            first = false;
+        }
+
+        for (String type : relTypes) {
+            if ("Unknown".equals(type)) continue;
+            if (!first) sb.append(" UNION ALL ");
+            sb.append(String.format("CALL { MATCH ()-[r:`%s`]->() RETURN count(r) AS c } RETURN '%s' AS name, 'REL' AS type, c AS count", type, type));
+            first = false;
+        }
+
+        if (sb.isEmpty()) return;
+
+        try {
+            Collection<Map<String, Object>> counts = neo4jClient.query(sb.toString()).fetch().all();
+
+            for (Map<String, Object> row : counts) {
+                String name = (String) row.get("name");
+                String type = (String) row.get("type");
+                Object countObj = row.get("count");
+
+                long count = 0L;
+                if (countObj instanceof Number num) {
+                    count = num.longValue();
+                } else if (countObj instanceof String str) {
+                    count = Long.parseLong(str);
+                }
+
+                if ("NODE".equals(type)) {
+                    nodeCountMap.put(name, count);
+                } else if ("REL".equals(type)) {
+                    relCountMap.put(name, count);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch database total counts. Query: {}", sb, e);
+        }
+    }
+
 }
