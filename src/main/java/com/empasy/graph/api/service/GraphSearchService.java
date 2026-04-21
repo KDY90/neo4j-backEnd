@@ -142,25 +142,57 @@ public class GraphSearchService {
             String inputValue = String.valueOf(contentMap.get("inputValue")).trim();
 
             if (!inputValue.isEmpty()) {
-                boolean isNumeric = inputValue.matches("-?\\d+(\\.\\d+)?");
+                String inputType = contentMap.containsKey("inputType") ? String.valueOf(contentMap.get("inputType")) : "";
+
+                boolean isNumeric = !"String".equalsIgnoreCase(inputType) && inputValue.matches("-?\\d+(\\.\\d+)?");
 
                 boolean isArray = inputValue.startsWith("[") && inputValue.endsWith("]");
 
-                String replacementValue = (isNumeric || isArray) ? inputValue : "\"" + inputValue + "\"";
+                boolean isAlreadyQuoted = (inputValue.startsWith("\"") && inputValue.endsWith("\"")) ||
+                        (inputValue.startsWith("'") && inputValue.endsWith("'"));
+
+                String replacementValue;
+
+                if (isNumeric || isArray || isAlreadyQuoted) {
+                    replacementValue = inputValue;
+                } else {
+                    replacementValue = "\"" + inputValue + "\"";
+                }
 
                 rawQuery = rawQuery.replaceAll("\\$\\w+", replacementValue);
             }
         }
 
-        if (limit > 0 && !rawQuery.toLowerCase().contains("limit")) {
-            rawQuery += " LIMIT " + limit;
-        }
-
-        Collection<Map<String, Object>> queryResult = neo4jClient.query(rawQuery)
+        String dataQuery = applyLimitToQuery(rawQuery, limit);
+        Collection<Map<String, Object>> queryResult = neo4jClient.query(dataQuery)
                 .fetch()
                 .all();
 
-        return convertToGroupData(queryResult, null, null);
+        Map<String, Long> nodeCountMap = new HashMap<>();
+        Map<String, Long> relationCountMap = new HashMap<>();
+
+        try {
+            String countQuery = buildCountQuery(rawQuery);
+            Collection<Map<String, Object>> countResult = neo4jClient.query(countQuery)
+                    .fetch()
+                    .all();
+
+            for (Map<String, Object> row : countResult) {
+                String label = (String) row.get("label");
+                String type = (String) row.get("type");
+                Long cnt = ((Number) row.get("cnt")).longValue();
+
+                if ("NODE".equals(type)) {
+                    nodeCountMap.merge(label, cnt, Long::sum);
+                } else {
+                    relationCountMap.merge(label, cnt, Long::sum);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("COUNT 쿼리 실패, 데이터 기준으로 fallback: {}", e.getMessage());
+        }
+
+        return convertToGroupDataForSavedQuery(queryResult, limit, nodeCountMap, relationCountMap);
     }
 
     private Node createDslNode(CypherBlock block, int index) {
@@ -602,6 +634,110 @@ public class GraphSearchService {
         }
 
         return strValue;
+    }
+
+    private GraphSearchResponseDto convertToGroupDataForSavedQuery(
+            Collection<Map<String, Object>> queryResult, int limit,
+            Map<String, Long> nodeCountMap, Map<String, Long> relationCountMap) {
+
+        List<Map<String, Object>> nodeList = new ArrayList<>();
+        List<Map<String, Object>> edgeList = new ArrayList<>();
+
+        Set<String> visitedNodeIds = new HashSet<>();
+        Set<String> visitedEdgeIds = new HashSet<>();
+
+        Map<String, Object> globalNodeStyles = new HashMap<>();
+        Map<String, Object> globalRelStyles = new HashMap<>();
+
+        Map<String, Map<String, Object>> nodeInfoMap = new HashMap<>();
+        Map<String, Map<String, Object>> dbStyleCache = new HashMap<>();
+
+        for (Map<String, Object> row : queryResult) {
+            for (Object value : row.values()) {
+                processResultItem(value, nodeList, edgeList, visitedNodeIds, visitedEdgeIds,
+                        dbStyleCache, globalNodeStyles, globalRelStyles, nodeInfoMap);
+            }
+        }
+
+        if (limit > 0) {
+            if (nodeList.size() > limit) {
+                nodeList = new ArrayList<>(nodeList.subList(0, limit));
+            }
+            if (edgeList.size() > limit) {
+                edgeList = new ArrayList<>(edgeList.subList(0, limit));
+            }
+        }
+
+        enrichWithGlobalConnectivity(nodeList, null);
+
+        return GraphSearchResponseDto.builder()
+                .nodes(nodeList)
+                .relationships(edgeList)
+                .nodeStyles(globalNodeStyles)
+                .relationshipStyles(globalRelStyles)
+                .nodeCount(nodeCountMap)
+                .relationCount(relationCountMap)
+                .build();
+    }
+
+    private String applyLimitToQuery(String rawQuery, int limit) {
+        if (rawQuery.trim().toUpperCase().matches("(?s).*\\bLIMIT\\s+\\d+.*")) {
+            return rawQuery;
+        }
+        return rawQuery.trim() + " LIMIT " + limit;
+    }
+
+    private String buildCountQuery(String rawQuery) {
+        String trimmed = rawQuery.trim();
+        String upper = trimmed.toUpperCase();
+
+        int returnIdx = upper.lastIndexOf("RETURN");
+        if (returnIdx == -1) return null;
+
+        String afterReturn = trimmed.substring(returnIdx + 6).trim();
+        afterReturn = afterReturn.replaceAll("(?i)\\s+(LIMIT|ORDER|SKIP).*", "").trim();
+
+        String firstReturnItem = afterReturn.split(",")[0].trim();
+
+        String[] asSplit = firstReturnItem.split("(?i)\\s+AS\\s+");
+
+        String returnVar;
+        if (asSplit.length > 1) {
+            returnVar = asSplit[1].trim().split("\\s")[0];
+        } else {
+            returnVar = asSplit[0].trim().split("\\s")[0];
+        }
+
+        boolean isPath = upper.contains("= (") || upper.contains("PATH(") ||
+                upper.matches("(?s).*\\b" + returnVar.toUpperCase() + "\\s*=.*");
+
+        if (isPath) {
+            return """
+                CALL {
+                    %s
+                }
+                WITH %s AS _p
+                UNWIND nodes(_p) AS _n
+                RETURN labels(_n)[0] AS label, 'NODE' AS type, count(DISTINCT _n) AS cnt
+                
+                UNION ALL
+                
+                CALL {
+                    %s
+                }
+                WITH %s AS _p
+                UNWIND relationships(_p) AS _r
+                RETURN type(_r) AS label, 'REL' AS type, count(DISTINCT _r) AS cnt
+                """.formatted(rawQuery, returnVar, rawQuery, returnVar);
+        }
+
+        return """
+            CALL {
+                %s
+            }
+            WITH %s AS _result
+            RETURN labels(_result)[0] AS label, 'NODE' AS type, count(DISTINCT _result) AS cnt
+            """.formatted(rawQuery, returnVar);
     }
 
 }
