@@ -251,7 +251,10 @@ public class GraphSearchService {
                 String strVal = String.valueOf(value).trim();
                 if (type.toLowerCase().contains("long")) {
                     try { castedValue = Long.valueOf(strVal); }
-                    catch (Exception e) { castedValue = strVal; }
+                    catch (Exception e) {
+                        log.debug("Long 파싱 실패, 기본 문자열로 대체합니다. 값: {}", strVal, e);
+                        castedValue = strVal;
+                    }
                 } else {
                     castedValue = strVal;
                 }
