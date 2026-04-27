@@ -20,6 +20,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -100,19 +101,13 @@ public class GraphSearchService {
             countExpressions.add(Cypher.countDistinct(Cypher.name(varName)).as("count_" + i));
         }
 
-        Statement countStatement = Cypher.match(finalPattern)
+        Statement baseStatement = Cypher.match(Cypher.path("p").definedBy(finalPattern))
                 .where(finalCondition)
-                .returning(countExpressions.toArray(new Expression[0]))
+                .returning(Cypher.name("p"))
                 .build();
+        String baseQuery = Renderer.getDefaultRenderer().render(baseStatement);
 
-        String countQueryString = Renderer.getDefaultRenderer().render(countStatement);
-        Map<String, Object> countResult = neo4jClient.query(countQueryString)
-                .bindAll(countStatement.getCatalog().getParameters())
-                .fetch()
-                .one()
-                .orElse(Collections.emptyMap());
-
-        return convertToGroupData(queryResult, cyphers, countResult);
+        return convertToGroupData(queryResult, cyphers, baseQuery);
     }
 
     private GraphSearchResponseDto executeSavedQuery(CypherBlock block, int limit) {
@@ -312,7 +307,7 @@ public class GraphSearchService {
         };
     }
 
-    private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult, List<CypherBlock> cyphers, Map<String, Object> patternCountResult) {
+    private GraphSearchResponseDto convertToGroupData(Collection<Map<String, Object>> queryResult, List<CypherBlock> cyphers, String baseQuery) {
         List<Map<String, Object>> nodeList = new ArrayList<>();
         List<Map<String, Object>> edgeList = new ArrayList<>();
 
@@ -334,63 +329,22 @@ public class GraphSearchService {
 
         enrichWithGlobalConnectivity(nodeList, cyphers);
 
-        Map<String, Long> nodeCountMap = new HashMap<>();
-        Map<String, Long> relationCountMap = new HashMap<>();
+        Map<String, Map<String, Long>> totalCounts = fetchRealTotalCounts(baseQuery);
+        Map<String, Long> nodeCountMap = totalCounts.get("node");
+        Map<String, Long> relationCountMap = totalCounts.get("relation");
 
-        if (patternCountResult != null && cyphers != null) {
-            for (int i = 0; i < cyphers.size(); i++) {
-                CypherBlock block = cyphers.get(i);
+        Set<String> renderedNodeLabels = nodeList.stream()
+                .map(n -> (String) n.get("label"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
 
-                long count = 0L;
-                Object countObj = patternCountResult.get("count_" + i);
-                if (countObj instanceof Number num) {
-                    count = num.longValue();
-                }
+        Set<String> renderedEdgeLabels = edgeList.stream()
+                .map(e -> (String) e.get("label"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
 
-                String label = block.getLabel();
-                if ("ANY".equals(label)) {
-                    label = (i % 2 == 0) ? "Total Nodes" : "Total Relations";
-                } else {
-                    if (i % 2 == 0) {
-                        String targetLabel = label;
-                        boolean hasMatchedLabel = nodeList.stream()
-                                .anyMatch(n -> targetLabel.equals(n.get("label")));
-
-                        if (!hasMatchedLabel && !nodeList.isEmpty()) {
-                            label = (String) nodeList.get(0).get("label");
-                        }
-                    } else {
-                        String targetLabel = label;
-                        boolean hasMatchedLabel = edgeList.stream()
-                                .anyMatch(e -> targetLabel.equals(e.get("label")));
-
-                        if (!hasMatchedLabel && !edgeList.isEmpty()) {
-                            label = (String) edgeList.get(0).get("label");
-                        }
-                    }
-                }
-
-                if (i % 2 == 0) {
-                    nodeCountMap.merge(label, count, Long::sum);
-                } else {
-                    relationCountMap.merge(label, count, Long::sum);
-                }
-            }
-        } else {
-            for (Map<String, Object> node : nodeList) {
-                String nodeLabel = (String) node.get("label");
-                if (nodeLabel != null) {
-                    nodeCountMap.merge(nodeLabel, 1L, Long::sum);
-                }
-            }
-
-            for (Map<String, Object> edge : edgeList) {
-                String edgeLabel = (String) edge.get("label");
-                if (edgeLabel != null) {
-                    relationCountMap.merge(edgeLabel, 1L, Long::sum);
-                }
-            }
-        }
+        nodeCountMap.keySet().retainAll(renderedNodeLabels);
+        relationCountMap.keySet().retainAll(renderedEdgeLabels);
 
         return GraphSearchResponseDto.builder()
                 .nodes(nodeList)
@@ -401,7 +355,6 @@ public class GraphSearchService {
                 .relationCount(relationCountMap)
                 .build();
     }
-
     private void processResultItem(Object item,
                                    List<Map<String, Object>> nodeList,
                                    List<Map<String, Object>> edgeList,
@@ -743,4 +696,43 @@ public class GraphSearchService {
             """.formatted(rawQuery, returnVar);
     }
 
+    private Map<String, Map<String, Long>> fetchRealTotalCounts(String baseQuery) {
+        if (baseQuery == null || baseQuery.isEmpty()) {
+            return Map.of("node", new HashMap<>(), "relation", new HashMap<>());
+        }
+
+        String totalCountCypher = """
+            CALL { %s }
+            WITH p
+            UNWIND nodes(p) AS n
+            UNWIND labels(n) AS nodeLabel
+            RETURN nodeLabel AS label, 'NODE' AS type, count(DISTINCT n) AS cnt
+            
+            UNION ALL
+            
+            CALL { %s }
+            WITH p
+            UNWIND relationships(p) AS r
+            RETURN type(r) AS label, 'REL' AS type, count(DISTINCT r) AS cnt
+            """.formatted(baseQuery, baseQuery);
+
+        Collection<Map<String, Object>> result = neo4jClient.query(totalCountCypher).fetch().all();
+
+        Map<String, Long> nodeCount = new HashMap<>();
+        Map<String, Long> relationCount = new HashMap<>();
+
+        for (Map<String, Object> row : result) {
+            String label = (String) row.get("label");
+            String type = (String) row.get("type");
+            Long cnt = ((Number) row.get("cnt")).longValue();
+
+            if ("NODE".equals(type)) {
+                nodeCount.put(label, cnt);
+            } else {
+                relationCount.put(label, cnt);
+            }
+        }
+
+        return Map.of("node", nodeCount, "relation", relationCount);
+    }
 }
