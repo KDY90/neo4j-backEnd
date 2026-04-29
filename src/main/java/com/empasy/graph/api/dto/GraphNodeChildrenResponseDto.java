@@ -12,6 +12,6 @@ import java.util.Map;
 @AllArgsConstructor
 public class GraphNodeChildrenResponseDto {
     @Schema(title = "data", description = "노드 리스트 로우의 하위 데이터")
-    private List<Map<String, Object>> data;
+    private List<GraphNodeDto> data;
 }
 
