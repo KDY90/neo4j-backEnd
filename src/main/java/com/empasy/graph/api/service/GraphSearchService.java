@@ -651,49 +651,43 @@ public class GraphSearchService {
         if (returnIdx == -1) return null;
 
         String afterReturn = trimmed.substring(returnIdx + 6).trim();
-        afterReturn = afterReturn.replaceAll("(?i)\\s+(LIMIT|ORDER|SKIP).*", "").trim();
+        afterReturn = afterReturn.replaceAll("(?i)\\s+(LIMIT|ORDER\\s+BY|SKIP).*", "").trim();
 
         String firstReturnItem = afterReturn.split(",")[0].trim();
-
         String[] asSplit = firstReturnItem.split("(?i)\\s+AS\\s+");
 
-        String returnVar;
-        if (asSplit.length > 1) {
-            returnVar = asSplit[1].trim().split("\\s")[0];
-        } else {
-            returnVar = asSplit[0].trim().split("\\s")[0];
-        }
+        String returnExpr = asSplit[0].trim();
+        String returnVar = asSplit.length > 1 ? asSplit[1].trim().split("\\s")[0] : returnExpr.split("\\s")[0];
 
-        boolean isPath = upper.contains("= (") || upper.contains("PATH(") ||
-                upper.matches("(?s).*\\b" + returnVar.toUpperCase() + "\\s*=.*");
+        boolean returnsPath = returnExpr.equals("path");
 
-        if (isPath) {
+        if (returnsPath) {
             return """
-                CALL {
-                    %s
-                }
-                WITH %s AS _p
-                UNWIND nodes(_p) AS _n
-                RETURN labels(_n)[0] AS label, 'NODE' AS type, count(DISTINCT _n) AS cnt
-                
-                UNION ALL
-                
-                CALL {
-                    %s
-                }
-                WITH %s AS _p
-                UNWIND relationships(_p) AS _r
-                RETURN type(_r) AS label, 'REL' AS type, count(DISTINCT _r) AS cnt
-                """.formatted(rawQuery, returnVar, rawQuery, returnVar);
-        }
-
-        return """
             CALL {
                 %s
             }
-            WITH %s AS _result
-            RETURN labels(_result)[0] AS label, 'NODE' AS type, count(DISTINCT _result) AS cnt
-            """.formatted(rawQuery, returnVar);
+            WITH %s AS _p
+            UNWIND nodes(_p) AS _n
+            RETURN labels(_n)[0] AS label, 'NODE' AS type, count(DISTINCT _n) AS cnt
+
+            UNION ALL
+
+            CALL {
+                %s
+            }
+            WITH %s AS _p
+            UNWIND relationships(_p) AS _r
+            RETURN type(_r) AS label, 'REL' AS type, count(DISTINCT _r) AS cnt
+            """.formatted(rawQuery, returnVar, rawQuery, returnVar);
+        }
+
+        return """
+        CALL {
+            %s
+        }
+        WITH %s AS _result
+        RETURN labels(_result)[0] AS label, 'NODE' AS type, count(DISTINCT _result) AS cnt
+        """.formatted(rawQuery, returnVar);
     }
 
     private Map<String, Map<String, Long>> fetchRealTotalCounts(String baseQuery) {

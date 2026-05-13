@@ -34,8 +34,8 @@ public class GenericNodeRepositoryImpl implements GenericNodeRepository {
             throw new IllegalArgumentException("Label cannot be empty");
         }
 
-        int pageIndex = requestDto.getPageIndex();
-        int pageSize = requestDto.getPageSize();
+        int pageIndex = Math.max(requestDto.getPageIndex(), 0);
+        int pageSize = Math.max(requestDto.getPageSize(), 1);
         int skip = pageIndex * pageSize;
 
         List<CypherBlockDto> blocks = requestDto.getCypherBlocks();
@@ -51,35 +51,72 @@ public class GenericNodeRepositoryImpl implements GenericNodeRepository {
             if (savedQueryBlock.isPresent()) {
                 isSavedQuery = true;
                 SavedQueryContentDto savedContent = savedQueryBlock.get().getSavedQueryContent();
-                savedCypherQuery = savedContent.getCypherQuery();
+                savedCypherQuery = savedContent != null ? savedContent.getCypherQuery() : null;
+
+                if (savedCypherQuery == null || savedCypherQuery.trim().isEmpty()) {
+                    throw new IllegalArgumentException("Saved cypher query is empty");
+                }
+
                 String inputValue = savedContent.getInputValue();
 
                 if (inputValue != null && !inputValue.trim().isEmpty()) {
+                    inputValue = inputValue.trim();
 
                     boolean isNumeric = inputValue.matches("-?\\d+(\\.\\d+)?");
                     boolean isArray = inputValue.startsWith("[") && inputValue.endsWith("]");
-                    boolean isAlreadyQuoted = (inputValue.startsWith("\"") && inputValue.endsWith("\"")) ||
-                            (inputValue.startsWith("'") && inputValue.endsWith("'"));
+                    boolean isAlreadyQuoted =
+                            (inputValue.startsWith("\"") && inputValue.endsWith("\"")) ||
+                                    (inputValue.startsWith("'") && inputValue.endsWith("'"));
 
                     String replacementValue;
-
                     if (isNumeric || isArray || isAlreadyQuoted) {
                         replacementValue = inputValue;
                     } else {
-                        replacementValue = "\"" + inputValue + "\"";
+                        replacementValue = "\"" + inputValue.replace("\"", "\\\"") + "\"";
                     }
 
-                    savedCypherQuery = savedCypherQuery.replaceAll("\\$\\w+", java.util.regex.Matcher.quoteReplacement(replacementValue));
+                    savedCypherQuery = savedCypherQuery.replaceAll(
+                            "\\$\\w+",
+                            java.util.regex.Matcher.quoteReplacement(replacementValue)
+                    );
                 }
             }
         }
 
         String countQuery;
         String dataQuery;
+        Map<String, Object> params = new HashMap<>();
+        params.put("skip", skip);
+        params.put("pageSize", pageSize);
+        params.put("label", label);
 
         if (isSavedQuery) {
-            countQuery = "CALL () {\n" + savedCypherQuery + "\n} RETURN count(*) AS total";
-            dataQuery = "CALL () {\n" + savedCypherQuery + "\n} RETURN * SKIP " + skip + " LIMIT " + pageSize;
+            countQuery = """
+            CALL {
+                %s
+            }
+            WITH *
+            UNWIND [v IN keys({.*}) | {k: v, val: ({.*})[v]}] AS entry
+            WITH entry.val AS candidate
+            WHERE candidate IS NOT NULL
+              AND candidate:%s
+            RETURN count(DISTINCT candidate) AS total
+            """.formatted(savedCypherQuery, label);
+
+            dataQuery = """
+            CALL {
+                %s
+            }
+            WITH *
+            UNWIND [v IN keys({.*}) | {k: v, val: ({.*})[v]}] AS entry
+            WITH DISTINCT entry.val AS root
+            WHERE root IS NOT NULL
+              AND root:%s
+            RETURN root, exists((root)<-[]-()) AS hasChildren
+            SKIP $skip
+            LIMIT $pageSize
+            """.formatted(savedCypherQuery, label);
+
         } else if (blocks != null && !blocks.isEmpty()) {
             StringBuilder matchClause = new StringBuilder("MATCH ");
             String targetVar = "n0";
@@ -90,18 +127,24 @@ public class GenericNodeRepositoryImpl implements GenericNodeRepository {
                 String blockLabel = block.getLabel();
 
                 if ("NODE".equals(type) || i % 2 == 0) {
-                    matchClause.append("(n").append(i);
-                    if (blockLabel != null && !"ANY".equals(blockLabel)) {
-                        matchClause.append(":`").append(blockLabel).append("`");
+                    String nodeVar = "n" + i;
+                    matchClause.append("(").append(nodeVar);
+
+                    String effectiveLabel = blockLabel;
+                    if (i == 0) {
+                        effectiveLabel = label;
+                    }
+
+                    if (effectiveLabel != null && !effectiveLabel.isBlank() && !"ANY".equals(effectiveLabel)) {
+                        matchClause.append(":`").append(effectiveLabel).append("`");
                     }
                     matchClause.append(")");
 
-                    if (label.equals(blockLabel)) {
-                        targetVar = "n" + i;
-                    }
                 } else if ("RELATIONSHIP".equals(type) || i % 2 != 0) {
                     String direction = block.getDirection();
-                    String relTypeStr = (blockLabel != null && !"ANY".equals(blockLabel)) ? ":`" + blockLabel + "`" : "";
+                    String relTypeStr = (blockLabel != null && !"ANY".equals(blockLabel))
+                            ? ":`" + blockLabel + "`"
+                            : "";
 
                     if ("OUT".equalsIgnoreCase(direction)) {
                         matchClause.append("-[r").append(i).append(relTypeStr).append("]->");
@@ -112,49 +155,58 @@ public class GenericNodeRepositoryImpl implements GenericNodeRepository {
                     }
                 }
             }
-            countQuery = matchClause + " RETURN count(DISTINCT " + targetVar + ") AS total";
+            
+            countQuery = matchClause +
+                    " RETURN count(DISTINCT " + targetVar + ") AS total";
+
             dataQuery = matchClause +
                     " WITH DISTINCT " + targetVar + " AS root " +
                     " RETURN root, exists((root)<-[]-()) AS hasChildren " +
-                    " SKIP " + skip + " LIMIT " + pageSize;
+                    " SKIP $skip LIMIT $pageSize";
+
         } else {
             countQuery = "MATCH (n:`" + label + "`) RETURN count(n) AS total";
-            dataQuery = "MATCH (root:`" + label + "`) RETURN root, exists((root)<-[]-()) AS hasChildren SKIP " + skip + " LIMIT " + pageSize;
+            dataQuery = """
+            MATCH (root:`%s`)
+            RETURN root, exists((root)<-[]-()) AS hasChildren
+            SKIP $skip
+            LIMIT $pageSize
+            """.formatted(label);
         }
 
-        Long rowCount = 0L;
-        if (countQuery != null) {
-            rowCount = neo4jClient.query(countQuery).fetchAs(Long.class).one().orElse(0L);
-        }
+        Long rowCount = neo4jClient.query(countQuery)
+                .bindAll(params)
+                .fetchAs(Long.class)
+                .one()
+                .orElse(0L);
 
-        Collection<Map<String, Object>> rawResults = neo4jClient.query(dataQuery).fetch().all();
+        Collection<Map<String, Object>> rawResults = neo4jClient.query(dataQuery)
+                .bindAll(params)
+                .fetch()
+                .all();
 
         List<GraphNodeDto> finalData = new ArrayList<>();
 
         for (Map<String, Object> row : rawResults) {
-            Node rootNode = null;
+            Object rootObj = row.get("root");
+            if (!(rootObj instanceof Node rootNode)) {
+                continue;
+            }
 
-            for (Object value : row.values()) {
-                if (value instanceof Node) {
-                    Node tempNode = (Node) value;
-
-                    boolean hasTargetLabel = false;
-                    for (String nodeLabel : tempNode.labels()) {
-                        if (nodeLabel.equals(label)) {
-                            hasTargetLabel = true;
-                            break;
-                        }
-                    }
-                    if (hasTargetLabel) {
-                        rootNode = tempNode;
-                        break;
-                    }
+            boolean hasTargetLabel = false;
+            for (String nodeLabel : rootNode.labels()) {
+                if (label.equals(nodeLabel)) {
+                    hasTargetLabel = true;
+                    break;
                 }
             }
-            if (rootNode != null) {
-                Boolean hasChildren = row.get("hasChildren") != null ? (Boolean) row.get("hasChildren") : false;
-                finalData.add(GraphNodeDto.of(rootNode, hasChildren));
+
+            if (!hasTargetLabel) {
+                continue;
             }
+
+            Boolean hasChildren = row.get("hasChildren") instanceof Boolean b ? b : false;
+            finalData.add(GraphNodeDto.of(rootNode, hasChildren));
         }
 
         return GraphLabelNodesResponseDto.builder()
